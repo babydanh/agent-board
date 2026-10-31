@@ -8,6 +8,7 @@ import { CloudFolderRows, type CloudSessionsProps, CloudSessionsSection } from '
 import { useAgentMenuGestures } from '../useAgentMenuGestures.js';
 import { useNow } from '../useNow.js';
 import { contextChip,type ContextTone } from './contextChip.js';
+import { dismissEnded, readDismissed, withoutDismissed, writeDismissed } from './dismissedSessions.js';
 import { ancestorOf, projectMenuContext } from './projectNodeTargets.js';
 import { type ProjectStore, useProjectState } from './projectStore.js';
 import {
@@ -15,6 +16,7 @@ import {
   canMoveProjectNode,
   countSessions,
   filterProjectTree,
+  isEndedNode,
   isRunningNode,
   isSelectedSession,
   isUnfinishedNode,
@@ -116,7 +118,11 @@ export interface ProjectTreeProps {
 
 /** Sidebar: Project → groups → folders → repos → sessions, subagents under theirs. Git and files live on other pages. */
 export function ProjectTree(props: ProjectTreeProps) {
-  const { nodes, selectedProjectId, onSelectProject } = props;
+  const { selectedProjectId, onSelectProject } = props;
+  // Ended sessions the user cleared with "Dọn đã tắt": hidden here only, the server still reads them from the ledger.
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const nodes = useMemo(() => withoutDismissed(props.nodes, dismissed), [props.nodes, dismissed]);
+  const endedCount = useMemo(() => new Set(nodes.filter(isEndedNode).map((node) => node.sessionId ?? node.id)).size, [nodes]);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [agentKind, setAgentKind] = useState<ProjectTreeNode['agentKind'] | 'all'>('all');
   // Every open session shows by default: an idle omp pane is the user's own work, waiting for them.
@@ -195,6 +201,20 @@ export function ProjectTree(props: ProjectTreeProps) {
         </select>
         <label className="flex items-center gap-1" title="Chỉ hiện phiên đang làm hoặc đang chờ bạn, ẩn phiên rảnh"><input type="checkbox" checked={liveOnly} onChange={(event) => setLiveOnly(event.target.checked)} />Ẩn phiên rảnh</label>
         <label className={`flex shrink-0 items-center gap-1 ${unfinishedCount > 0 ? 'text-warning' : ''}`} title="Chỉ hiện phiên làm dở: bị ngắt giữa chừng, hoặc đã dừng khi todo chưa xong (kể cả phiên đã tắt trong 24 giờ qua)"><input type="checkbox" checked={unfinishedOnly} onChange={(event) => setUnfinishedOnly(event.target.checked)} />Làm dở{unfinishedCount > 0 ? ` (${unfinishedCount})` : ''}</label>
+        {endedCount > 0 && (
+          <button
+            type="button"
+            className="shrink-0 rounded px-1 text-xs text-text-muted hover:bg-hover"
+            title="Ẩn khỏi danh sách mọi phiên đã tắt (chỉ trên trình duyệt này); phiên chạy lại sẽ hiện lại"
+            onClick={() => {
+              const next = dismissEnded(props.nodes, dismissed, Date.now());
+              writeDismissed(next);
+              setDismissed(next);
+            }}
+          >
+            Dọn đã tắt ({endedCount})
+          </button>
+        )}
       </div>
       <RecentlyStopped nodes={nodes} onOpenStopped={props.onOpenStopped} onMenu={props.onMenu} cloud={props.cloud !== undefined} />
       <div className="min-h-0 overflow-y-auto">
