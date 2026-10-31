@@ -1,0 +1,18 @@
+{
+  "name": "botkeep-relay",
+  "version": "1.0.0",
+  "description": "Always-on HTTPS gateway that tunnels the Pixel Agents board from whichever machine is online",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "test": "node --test test/*.test.mjs",
+    "build-zip": "node build-zip.mjs"
+  },
+  "dependencies": {
+    "ws": "8.21.1"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
