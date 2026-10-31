@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { FleetMachineSnapshot, FleetTaskCreateMessage } from '../../../../core/src/messages.js';
 import type { CloudPlaceNode } from './cloudFolders.js';
-import { pickMachine } from './cloudTaskPick.js';
+import { cloudHasRepo, pickMachine } from './cloudTaskPick.js';
 import type { CloudRequest } from './FleetView.js';
 
 type CloudEngine = NonNullable<FleetTaskCreateMessage['engine']>;
@@ -45,7 +45,7 @@ export function CloudSessionsSection({ request, nodes, error }: CloudSessionsPro
 
 /** The request box a right-click "Phiên mới · … cloud" opens under a tree node, and a create's failure. */
 export function CloudFolderRows({ nodeId, depth, ...props }: CloudSessionsProps & { readonly nodeId: string; readonly depth: number }) {
-  const { machines, request, busy } = props;
+  const { machines, request, busy, nodes } = props;
   const [formOpen, setFormOpen] = useState(false);
   useEffect(() => {
     if (request?.nodeId === nodeId) setFormOpen(true);
@@ -67,6 +67,7 @@ export function CloudFolderRows({ nodeId, depth, ...props }: CloudSessionsProps 
           busy={busy}
           initialEngine={request.engine}
           nodeId={nodeId}
+          repoMissing={!cloudHasRepo(nodeId, nodes, machines)}
           onSubmit={(task) => {
             props.onCreate(task);
             setFormOpen(false);
@@ -82,12 +83,15 @@ function CloudNewForm({
   busy,
   initialEngine,
   nodeId,
+  repoMissing,
   onSubmit,
 }: {
   readonly machines: readonly FleetMachineSnapshot[];
   readonly busy: boolean;
   readonly initialEngine: CloudEngine;
   readonly nodeId?: string;
+  /** No machine has this folder's repository: the task would run on other code, so nothing is created. */
+  readonly repoMissing: boolean;
   readonly onSubmit: (task: CloudNewTask) => void;
 }) {
   const [engine, setEngine] = useState<CloudEngine>(initialEngine);
@@ -98,7 +102,7 @@ function CloudNewForm({
   }, []);
   const target = pickMachine(machines);
   const agentName = engine === 'omp' ? 'omp' : 'Claude';
-  const ready = !busy && target !== null && prompt.trim() !== '';
+  const ready = !busy && !repoMissing && target !== null && prompt.trim() !== '';
   return (
     <form
       className="mx-2 flex flex-col gap-1 rounded-lg border border-white/5 bg-white/[0.03] p-2"
@@ -129,7 +133,7 @@ function CloudNewForm({
           <option value="omp">omp</option>
         </select>
         <span className="min-w-0 flex-1 truncate text-2xs text-text-muted">
-          {target === null ? 'Chưa có máy rảnh đủ 3 repo' : `chạy trên ${target}`}
+          {repoMissing ? 'Máy cloud chưa có repo của thư mục này' : target === null ? 'Chưa có máy rảnh đủ 3 repo' : `chạy trên ${target}`}
         </span>
         <button type="submit" disabled={!ready} className="company-btn company-btn-sm company-btn-primary">
           Tạo

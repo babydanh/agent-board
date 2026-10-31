@@ -1,4 +1,5 @@
 import type { FleetMachineSnapshot } from '../../../../core/src/messages.js';
+import { type CloudPlaceNode, folderRepoNames } from './cloudFolders.js';
 
 /** The three project repositories a machine must have cloned to take an all-repo task. */
 export const PROJECT_REPOS = ['HethongBackendApi_QuanlyGiaiDau', 'HethongFrontEndWeb_QLgiaidau', 'HethongFrontEndApp_QLgiaidau'];
@@ -21,6 +22,13 @@ export function projectMachines(machines: readonly FleetMachineSnapshot[]): Mach
 /** The machine a new task goes to: the least busy project machine below the cap, or null when all are full. */
 export function pickMachine(machines: readonly FleetMachineSnapshot[]): string | null {
   return projectMachines(machines).find((pick) => pick.sessions < MAX_SESSIONS_PER_MACHINE)?.machine ?? null;
+}
+
+/** Whether some machine has a repository this node's folders are named after; a node with no folder is not judged. */
+export function cloudHasRepo(nodeId: string, nodes: readonly CloudPlaceNode[], machines: readonly FleetMachineSnapshot[]): boolean {
+  const wanted = folderRepoNames(nodes, nodeId);
+  if (wanted.size === 0) return true;
+  return machines.some((machine) => machine.repos.some((repo) => wanted.has(repo.name.toLowerCase())));
 }
 
 /**

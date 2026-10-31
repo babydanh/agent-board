@@ -78,6 +78,23 @@ function folderNames(nodes: readonly CloudPlaceNode[]): Map<string, FolderEntry>
   return folders;
 }
 
+/** Every name a node's folders go by: the folder itself and the directories below it, for the node and all it holds. */
+export function folderRepoNames(nodes: readonly CloudPlaceNode[], nodeId: string): Set<string> {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const names = new Set<string>();
+  for (const [id, entry] of folderNames(nodes)) {
+    let current = byId.get(id);
+    for (let hops = 0; current !== undefined && hops <= nodes.length; hops += 1) {
+      if (current.id === nodeId) {
+        for (const name of entry.names) names.add(name);
+        break;
+      }
+      current = current.parentId === undefined ? undefined : byId.get(current.parentId);
+    }
+  }
+  return names;
+}
+
 /** The folder holding most of the session's repositories; several folders under one project mean that project. */
 function folderOfRepos(repos: readonly { readonly name: string }[], folders: ReadonlyMap<string, FolderEntry>): string | undefined {
   const counts = new Map<string, { readonly node: CloudPlaceNode; count: number }>();
