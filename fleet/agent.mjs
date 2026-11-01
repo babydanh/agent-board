@@ -26,8 +26,11 @@ const GUARD_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const GUARD_PRUNE_STAMP = join(homedir(), '.cache', 'git-guard', 'last-prune');
 const ENGINES = { claude: /(^|\/)claude$/, codex: /(^|\/)codex$/, omp: /(^|\/)omp$/ };
 
+// stderr is ignored: a missing upstream or ref is an expected answer here, and `--loop` would flood the log with it.
+const GIT_STDIO = ['ignore', 'pipe', 'ignore'];
+
 export const git = (cwd, ...args) => {
-  try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return ''; }
+  try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 5000, stdio: GIT_STDIO }).trim(); } catch { return ''; }
 };
 
 /**
@@ -36,7 +39,7 @@ export const git = (cwd, ...args) => {
  */
 export function dirtyPaths(cwd) {
   let out = '';
-  try { out = execFileSync('git', ['-C', cwd, 'status', '--porcelain'], { encoding: 'utf8', timeout: 5000 }); } catch { /* not a repository */ }
+  try { out = execFileSync('git', ['-C', cwd, 'status', '--porcelain'], { encoding: 'utf8', timeout: 5000, stdio: GIT_STDIO }); } catch { /* not a repository */ }
   return out.split('\n').filter(Boolean).map((line) => line.slice(3)).slice(0, 200);
 }
 
