@@ -69,6 +69,7 @@ export function CloudDrawerPanel({ machine, session, onClose }: { machine: strin
             onHistory={() => fleetStore.requestHistory(machine, session)}
             historyBusy={fleet.action?.kind === 'history'}
             restartBusy={fleet.action?.kind === 'restart'}
+            onReopen={fleetStore.reopenTerminal}
             onRestart={() => {
               if (window.confirm('Chạy lại Claude trong phiên này? Claude tắt rồi mở lại đúng hội thoại cũ. Máy từ chối nếu Claude vừa ghi trong 30 giây (có thể đang làm việc).')) {
                 fleetStore.restartSession(machine, session);

@@ -12,6 +12,7 @@ import { serverToken } from '../../transport/serverToken.js';
 import { shouldOpenHistory } from './cloudHistoryTrigger.js';
 import { registerCloudInput } from './cloudInput.js';
 import { exitScreen } from './cloudTerminalExit.js';
+import { shouldReopenTerminal } from './cloudTerminalReopen.js';
 
 /** xterm's own default stack starts with Courier New, which is thin and uneven on Windows; these ship with the OS. */
 const TERMINAL_FONT_FAMILY = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
@@ -32,6 +33,7 @@ export function CloudTerminal({
   historyBusy = false,
   onRestart,
   restartBusy = false,
+  onReopen,
 }: {
   terminalId: number;
   label: string;
@@ -42,9 +44,15 @@ export function CloudTerminal({
   historyBusy?: boolean;
   onRestart?: () => void;
   restartBusy?: boolean;
+  /** Attaches a fresh terminal to the same session: the board lost this one (its ssh ended or the board restarted). */
+  onReopen?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState('Đang nối tới máy (máy ngủ thì mất 1–2 phút)…');
+  // True once the socket is closed or the ssh ended: the live view is dead until a new terminal is attached.
+  const [ended, setEnded] = useState(false);
+  const reopen = useRef({ fn: onReopen, lastAt: null as number | null });
+  reopen.current.fn = onReopen;
   // The terminal effect runs once per socket; the wheel handler inside it must see the current props and cooldown.
   const historyAsk = useRef({ onHistory, busy: historyBusy, lastOpenedAt: null as number | null });
   historyAsk.current.onHistory = onHistory;
@@ -101,10 +109,19 @@ export function CloudTerminal({
         term.reset();
         term.write(exitScreen(lines, reason));
         setStatus(reason);
+        setEnded(true);
       }
     };
     socket.onclose = (event: CloseEvent) => {
-      if (event.code !== 1000) setStatus(`Mất kết nối terminal (${event.code}${event.reason ? `: ${event.reason}` : ''}).`);
+      if (event.code === 1000) return;
+      setStatus(`Mất kết nối terminal (${event.code}${event.reason ? `: ${event.reason}` : ''}).`);
+      setEnded(true);
+      const now = Date.now();
+      const again = reopen.current;
+      if (again.fn && shouldReopenTerminal({ code: event.code, lastReopenAt: again.lastAt, now })) {
+        again.lastAt = now;
+        again.fn();
+      }
     };
     const input = term.onData((data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(encodeTerminalFrame({ type: 'input', data }));
@@ -156,6 +173,11 @@ export function CloudTerminal({
         <span className="flex-1 truncate text-xs text-text-muted">
           {status || 'Thoát khung không tắt agent. Thoát tmux: Ctrl+B rồi D.'}
         </span>
+        {ended && onReopen && (
+          <button type="button" className="company-btn company-btn-sm" onClick={onReopen} title="Nối lại terminal tới phiên này (agent trên máy vẫn chạy trong tmux)">
+            Nối lại
+          </button>
+        )}
         {onHistory && (
           <button type="button" disabled={historyBusy} className="company-btn company-btn-sm company-btn-ghost" onClick={onHistory} title="Tải lịch sử một lần rồi cuộn trên máy bạn, không trễ">
             {historyBusy ? 'Đang tải…' : 'Lịch sử'}

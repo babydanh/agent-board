@@ -46,6 +46,7 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
             terminalId={fleet.terminal.terminalId}
             label={`${fleet.terminal.machine} · ${fleet.terminal.session}`}
             onClose={() => fleetStore.closeTerminal()}
+            onReopen={fleetStore.reopenTerminal}
           />
         )}
         <ActionStatus fleet={fleet} />

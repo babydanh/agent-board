@@ -91,6 +91,8 @@ export interface FleetStore {
   requestFleet: () => string;
   openTerminal: (machine: string, session: string) => void;
   closeTerminal: () => void;
+  /** Drops the attached terminal and opens a fresh one on the same session (its board-side process is gone). */
+  reopenTerminal: () => void;
   createTask: (task: Omit<FleetTaskCreateMessage, 'type' | 'requestId'>) => void;
   /** Stops waiting for the action in flight (its late answer is ignored) so the buttons work again. */
   cancelAction: () => void;
@@ -327,6 +329,14 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
       commit({ ...state, action: null, actionError: null });
     },
     closeTerminal: () => commit({ ...state, terminal: null }),
+    reopenTerminal: () => {
+      const dead = state.terminal;
+      // Another action running owns the lock: dropping the terminal now would leave nothing to reopen it.
+      if (dead === null || state.action !== null) return;
+      // The board gives a reopened session the same id, so the old one must leave first or the view would not reconnect.
+      commit({ ...state, terminal: null });
+      act({ type: 'fleetTerminalOpen', requestId: newRequestId(), machine: dead.machine, session: dead.session }, 'terminal', dead.session);
+    },
     createTask: (task) => {
       act({ type: 'fleetTaskCreate', requestId: newRequestId(), ...task }, 'task', task.slug);
     },
