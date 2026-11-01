@@ -716,7 +716,7 @@ export function BoardShell({ client }: BoardShellProps) {
       return;
     }
     if (cloudRef !== null && action === 'cloudClean') {
-      fleetStore.cleanTask(cloudRef.machine, cloudRef.session);
+      fleetStore.cleanTask(cloudRef.machine, cloudRef.session, true);
       return;
     }
     if (action === 'closeHerdr') {

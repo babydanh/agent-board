@@ -771,7 +771,7 @@ export function AgentContextMenu({
         };
       case 'cloud-clean':
         return {
-          message: `Xoá phiên cloud ${subject.kind === 'projectNode' ? subject.node.name : ''}? Máy cloud tắt agent, gỡ worktree và nhánh cục bộ của phiên. Máy từ chối nếu còn file chưa commit hoặc commit chưa push.`,
+          message: `Xoá phiên cloud ${subject.kind === 'projectNode' ? subject.node.name : ''}? Máy cloud tắt agent, gỡ worktree và nhánh cục bộ của phiên. Commit chưa push được đẩy lên nhánh cloud/… trên GitHub trước khi xoá nên không mất; máy từ chối nếu còn file chưa commit.`,
           label: 'Xoá phiên cloud',
           run: () => {
             if (subject.kind === 'projectNode') onProjectNodeAction?.(subject.node, 'cloudClean');
