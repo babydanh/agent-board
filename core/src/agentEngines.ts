@@ -23,7 +23,10 @@ export type ProjectTreeAgentKind = AgentEngine | 'sub' | 'herdr' | 'board';
 export function agentEngineForKind(kind: string | null | undefined): AgentEngine | null {
   const normalized = kind?.toLowerCase();
   if (normalized === 'main' || normalized === 'sub') return 'omp';
-  return AGENT_ENGINES.find((engine) => engine.id === normalized)?.id ?? null;
+  if (normalized === undefined) return null;
+  // The activity ledger writes display names ("Claude Code", "claude-code"): the first word is the engine id.
+  const word = normalized.split(/[^a-z0-9]+/)[0];
+  return AGENT_ENGINES.find((engine) => engine.id === normalized || engine.id === word)?.id ?? null;
 }
 
 export function agentEngineForCommand(command: string | undefined): AgentEngine | null {
