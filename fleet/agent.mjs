@@ -166,9 +166,10 @@ export function defaultBranch(path) {
  */
 export function changedRanges(path) {
   // A long-lived branch (main, release, stable...) is not work in flight: it carries commits its default branch lacks
-  // (release cherry-picks), so only what it holds beyond its own upstream counts.
+  // (release cherry-picks) and may trail its upstream, so only what it holds beyond the fork point with its own
+  // upstream counts: the upstream's newer commits are not this lane's edits.
   const upstream = LONG_LIVED_BRANCH.test(git(path, 'branch', '--show-current'))
-    ? git(path, 'rev-parse', '--verify', '--quiet', '@{upstream}')
+    ? git(path, 'merge-base', '@{upstream}', 'HEAD')
     : '';
   const base = upstream || git(path, 'merge-base', defaultBranch(path), 'HEAD');
   if (!base) return [];

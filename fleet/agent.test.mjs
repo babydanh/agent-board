@@ -234,6 +234,20 @@ test('TC-BASE-LONGLIVED-02: on a long-lived branch only uncommitted and unpushed
   assert.deepEqual(paths, ['a.txt', 'b.txt']);
 });
 
+test('TC-BASE-LONGLIVED-03: a long-lived branch that is behind its upstream reports no changes', () => {
+  const clone = cloneOnReleaseBranch();
+  const other = join(mkdtempSync(join(tmpdir(), 'base-behind-')), 'other');
+  gitIn(clone, 'clone', '-q', gitIn(clone, 'remote', 'get-url', 'origin').trim(), other);
+  gitIn(other, 'checkout', '-q', 'stable');
+  writeFileSync(join(other, 'c.txt'), 'newer upstream work\n');
+  gitIn(other, 'add', 'c.txt');
+  gitIn(other, 'commit', '-q', '-m', 'upstream moves on');
+  gitIn(other, 'push', '-q', 'origin', 'stable');
+  gitIn(clone, 'fetch', '-q');
+  assert.equal(gitIn(clone, 'rev-list', '--count', 'HEAD..@{upstream}').trim(), '1');
+  assert.deepEqual(changedRanges(clone), []);
+});
+
 test('TC-BASE-DEFAULT-03: without a usable origin/HEAD the default branch is origin/main', () => {
   const dir = mkdtempSync(join(tmpdir(), 'base-nohead-'));
   gitIn(dir, 'init', '-q', '-b', 'main');
