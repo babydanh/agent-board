@@ -28,6 +28,17 @@ export const TASK_DESCRIPTION_DISPLAY_MAX_LENGTH = 40;
  *  handshake carries the server token as `?token=`, exactly like `/ws` (see
  *  server/src/wsAuth.ts); the frame shapes are in terminalFrames.ts. */
 export const TERMINAL_WS_PREFIX = '/terminal';
+/** The view-only share page (`/share/<token>`), its socket and its bundled script and style. */
+export const SHARE_PAGE_PREFIX = '/share';
+export const SHARE_WS_PREFIX = '/share-ws';
+export const SHARE_ASSET_PREFIX = '/share-assets';
+/** Share socket close codes, read by the server that sends them and the viewer page that explains them. */
+/** The link is unknown, expired or revoked. */
+export const WS_CLOSE_SHARE_UNKNOWN = 4404;
+/** The link ended while the viewer was watching (revoked or expired). */
+export const WS_CLOSE_SHARE_ENDED = 4410;
+/** This link already has its viewers. */
+export const WS_CLOSE_SHARE_FULL = 4429;
 
 // ── Transport ────────────────────────────────────────────────
 // Connection-state names for the MessageTransport state machine.

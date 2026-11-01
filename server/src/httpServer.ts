@@ -46,6 +46,8 @@ import { handleProjectMessage, type ProjectCommandContext } from './projects/han
 import { buildProjectTreeSnapshot, herdrProjectSessions } from './projects/projectTree.js';
 import { createTranscriptProgress, type TranscriptFacts } from './projects/sessionProgress.js';
 import { processAlive } from './projects/sessionStop.js';
+import { registerShareRoutes } from './share/shareRoutes.js';
+import { ShareStore } from './share/shareStore.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { AgentState } from './types.js';
@@ -102,6 +104,8 @@ export interface HttpServerOptions {
   /** PTY terminals for standalone-launched agents. Absent = terminal feature off
    *  (VS Code embedded mode, where the editor owns terminals). */
   ptyManager?: PtySessionManager;
+  /** View-only share links. Standalone with a terminal manager gets a fresh store when absent. */
+  shares?: ShareStore;
   /** Project persistence and checkout discovery, supplied by the host composition root. */
   projects?: Omit<ProjectCommandContext, 'privileged' | 'agents' | 'herdrSessions'>;
   /** Extra Host names (beyond loopback and a specific bind address) a
@@ -153,6 +157,15 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   const host = options.host ?? '127.0.0.1';
   const allowedHostnames = privilegedHostnames(host, options.allowedHosts ?? []);
+
+  // Share links open terminals to people without the board token, so they exist only where
+  // terminals do: standalone with a PTY manager. Resolved first so every route sees the same store.
+  if (!options.embedded && options.ptyManager) {
+    const ptyManager = options.ptyManager;
+    const shares = options.shares ?? new ShareStore();
+    registerShareRoutes(app, { shares, feedFor: (terminalId) => ptyManager.get(terminalId) });
+    options = { ...options, shares };
+  }
 
   registerHealthRoute(app);
   registerHookRoute(app, options);
@@ -460,6 +473,7 @@ function registerWebSocketRoute(
             usage: options.usage ?? null,
             getLocalGuard: options.getLocalGuard,
             ptyManager: options.ptyManager,
+            shares: options.shares,
             projects: {
               ...options.projects,
               ...projectTreeFromLedger(options),

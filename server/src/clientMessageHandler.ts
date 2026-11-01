@@ -38,6 +38,8 @@ import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import { handleShareMessage } from './share/handler.js';
+import type { ShareStore } from './share/shareStore.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
@@ -115,6 +117,8 @@ export interface ClientMessageContext {
   /** Ledger board service for this process; null or absent when the ledger is not wired. */
   ledger?: LedgerService | null;
   getLocalGuard?: () => GitGuardReport | null;
+  /** View-only share links; absent when this process serves none. */
+  shares?: ShareStore;
   /** Project persistence and checkout discovery; request privilege is supplied per socket. */
   projects?: Omit<ProjectCommandContext, 'privileged' | 'agents' | 'herdrSessions'>;
 }
@@ -222,6 +226,17 @@ export function handleClientMessage(
       ledger: ctx.ledger ?? null,
       ptyManager: ctx.ptyManager ?? null,
       getLocalGuard: ctx.getLocalGuard,
+      privileged: ctx.privileged === true,
+    })
+  ) {
+    return;
+  }
+
+  if (
+    ctx.shares !== undefined &&
+    handleShareMessage(msg, (message) => send(message as unknown as Record<string, unknown>), {
+      shares: ctx.shares,
+      hasTerminal: (terminalId) => ctx.ptyManager?.has(terminalId) === true,
       privileged: ctx.privileged === true,
     })
   ) {

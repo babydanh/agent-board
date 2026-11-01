@@ -54,6 +54,8 @@ export type ProjectNodeAction =
   | 'copySessionId'
   | 'wake'
   | 'cloudHandoff'
+  /** "Share session…": the board opens the view-only link dialog for a cloud session. */
+  | 'share'
   | 'stop'
   | 'closeHerdr'
   | 'cloudClean';
@@ -889,6 +891,7 @@ export function projectNodeMenuItems(
       if (parseCloudNodeId(node.id) !== null) {
         return [
           ...(node.state === 'sleeping' ? [] : [add('open-session', 'Mở terminal', 'external', 'openSession')]),
+          ...(node.state === 'sleeping' ? [] : [add('share', 'Share session…', 'users', 'share')]),
           ...(node.path === undefined ? [] : [add('changes', 'Xem thay đổi', 'file-text', 'changes', node.state !== 'sleeping')]),
           add('copy-session', 'Sao chép mã phiên', 'copy', 'copySessionId', true),
           ...(node.path === undefined ? [] : [add('copy-path', 'Sao chép thư mục làm việc', 'copy', 'copyPath')]),

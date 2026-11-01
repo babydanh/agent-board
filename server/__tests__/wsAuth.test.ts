@@ -106,6 +106,13 @@ describe('redactTokenQuery', () => {
     expect(redactTokenQuery('/ws?token=abc#frag')).toBe('/ws?token=[redacted]#frag');
   });
 
+  it('TC-SHARE-26 blanks the secret of a share link, which rides in the path', () => {
+    expect(redactTokenQuery('/share/AbC_123-xyz')).toBe('/share/[redacted]');
+    expect(redactTokenQuery('/share-ws/AbC_123-xyz')).toBe('/share-ws/[redacted]');
+    expect(redactTokenQuery('/share/AbC_123-xyz?x=1')).toBe('/share/[redacted]?x=1');
+    expect(redactTokenQuery('/share-assets/viewer.js')).toBe('/share-assets/viewer.js');
+  });
+
   it('leaves urls without a token untouched', () => {
     expect(redactTokenQuery('/ws')).toBe('/ws');
     expect(redactTokenQuery('/api/health?tokens=3')).toBe('/api/health?tokens=3');

@@ -171,6 +171,15 @@ describe('herdr project session menu', () => {
     state,
   });
 
+  it('TC-SHARE-35 offers "Share session…" on a cloud session that is awake, never on a sleeping or a local one', () => {
+    const cloudSession = (state: string): ProjectTreeNode => ({ id: 'cloud:m1/fix-login', kind: 'session', name: 'fix-login', state });
+    const share = (target: ProjectTreeNode) =>
+      projectNodeMenuItems(target, { hasCheckout: false, folderCount: 1, cloud: true }).find((item) => item.id === 'share');
+    expect(share(cloudSession('working'))?.action).toEqual({ kind: 'projectNodeAction', action: 'share' });
+    expect(share(cloudSession('sleeping'))).toBeUndefined();
+    expect(share({ id: 'omp:abc', kind: 'session', name: 'local', sessionId: 'abc', agentKind: 'omp', state: 'working' })).toBeUndefined();
+  });
+
   it('offers a Claude and an omp cloud session next to the local ones, only when the cloud page exists', () => {
     const folder: ProjectTreeNode = { id: 'f', kind: 'folder', name: 'f', path: 'V:/f' };
     const labels = (cloud: boolean) =>

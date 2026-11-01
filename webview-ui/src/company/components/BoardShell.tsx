@@ -81,6 +81,7 @@ import {
   selectionForSession,
   selectionForTask,
 } from '../selection.js';
+import { ShareDialog } from '../share/ShareDialog.js';
 import { findShortcutId, matchShortcut } from '../shortcuts.js';
 import {
   clampSidebarWidth,
@@ -183,6 +184,7 @@ export function BoardShell({ client }: BoardShellProps) {
   const [stoppedNode, setStoppedNode] = useState<ProjectTreeNode | null>(null);
   /** The full stopped-sessions list is open. */
   const [stoppedHistoryOpen, setStoppedHistoryOpen] = useState(false);
+  const [shareNode, setShareNode] = useState<ProjectTreeNode | null>(null);
   const [selectedCheckoutId, setSelectedCheckoutId] = useState('');
   const [changesTab, setChangesTab] = useState<'diff' | 'merge' | 'compare'>('diff');
   const [compareBranchA, setCompareBranchA] = useState('');
@@ -722,6 +724,10 @@ export function BoardShell({ client }: BoardShellProps) {
     }
     if (action === 'settings') {
       openProjectSettings(node.id);
+      return;
+    }
+    if (cloudRef !== null && action === 'share') {
+      setShareNode(node);
       return;
     }
     if (cloudRef !== null && action === 'cloudClean') {
@@ -1493,6 +1499,7 @@ export function BoardShell({ client }: BoardShellProps) {
           }}
         />
       )}
+      {shareNode !== null && <ShareDialog node={shareNode} onClose={() => setShareNode(null)} />}
       {stoppedHistoryOpen && (
         <StoppedHistoryDialog
           store={projectStore}

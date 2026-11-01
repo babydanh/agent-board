@@ -19,6 +19,7 @@ import { fleetStore } from './fleet/fleetClient.js';
 import { ledgerStore } from './ledger/ledgerClient.js';
 import { libraryStore } from './library/libraryClient.js';
 import { projectStore } from './projects/projectClient.js';
+import { shareStore } from './share/shareClient.js';
 
 export function useCompanyTransport(client: CompanyClient): void {
   useEffect(() => {
@@ -27,6 +28,7 @@ export function useCompanyTransport(client: CompanyClient): void {
       fleetStore.accept(message);
       ledgerStore.accept(message);
       projectStore.accept(message);
+      shareStore.accept(message);
       if (isCompanyServerMessage(message)) client.accept(message);
     });
     client.connect();

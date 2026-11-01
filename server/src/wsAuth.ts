@@ -118,7 +118,10 @@ const TOKEN_QUERY_REDACTED = '[redacted]';
  * the logged line still identifies the request.
  */
 export function redactTokenQuery(url: string): string {
-  return url.replace(/([?&]token=)[^&#]*/g, `$1${TOKEN_QUERY_REDACTED}`);
+  return url
+    .replace(/([?&]token=)[^&#]*/g, `$1${TOKEN_QUERY_REDACTED}`)
+    // A share link carries its secret in the path: `/share/<token>` and `/share-ws/<token>`.
+    .replace(/(\/share(?:-ws)?\/)[^/?#]+/g, `$1${TOKEN_QUERY_REDACTED}`);
 }
 
 // ── Host allowlist ─────────────────────────────────────────────
