@@ -26,9 +26,19 @@ const GUARD_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const GUARD_PRUNE_STAMP = join(homedir(), '.cache', 'git-guard', 'last-prune');
 const ENGINES = { claude: /(^|\/)claude$/, codex: /(^|\/)codex$/, omp: /(^|\/)omp$/ };
 
-const git = (cwd, ...args) => {
+export const git = (cwd, ...args) => {
   try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return ''; }
 };
+
+/**
+ * Paths with uncommitted changes. `git()` trims the whole output, which would eat the leading space of the first
+ * ` M path` line and cut its first character, so the status is read untrimmed.
+ */
+export function dirtyPaths(cwd) {
+  let out = '';
+  try { out = execFileSync('git', ['-C', cwd, 'status', '--porcelain'], { encoding: 'utf8', timeout: 5000 }); } catch { /* not a repository */ }
+  return out.split('\n').filter(Boolean).map((line) => line.slice(3)).slice(0, 200);
+}
 
 function sessions() {
   const out = [];
@@ -128,7 +138,7 @@ function refreshRemotes(repoRoots) {
 }
 
 /** True when merging HEAD into `ref` changes nothing (content check: also catches squash merges). */
-function contentIn(path, ref) {
+export function contentIn(path, ref) {
   const target = git(path, 'rev-parse', `${ref}^{tree}`);
   return Boolean(target) && git(path, 'merge-tree', '--write-tree', ref, 'HEAD').split('\n')[0] === target;
 }
@@ -138,7 +148,7 @@ function contentIn(path, ref) {
  * committed and uncommitted edits. Line numbers only, never content. Approximate: machines on
  * different bases can be a few lines off; the local overlap.py merge-tree check is exact.
  */
-function changedRanges(path) {
+export function changedRanges(path) {
   const base = git(path, 'merge-base', 'origin/main', 'HEAD');
   if (!base) return [];
   const out = git(path, 'diff', '-U0', '--no-color', '--no-ext-diff', base, '--');
@@ -217,7 +227,7 @@ function repos() {
       ahead: Number(counts[1]) || 0,
       merged: contentIn(path, 'origin/main'),
       staged: contentIn(path, 'origin/staging'),
-      dirty_files: git(path, 'status', '--porcelain').split('\n').filter(Boolean).map((l) => l.slice(3)).slice(0, 200),
+      dirty_files: dirtyPaths(path),
       changes: changedRanges(path),
     };
   });

@@ -23,8 +23,8 @@ import {
   FLEET_STALE_AFTER_MS,
 } from './constants.js';
 import { collectFleetBranchPullRequests } from './fleetBranchStatus.js';
-import { buildFleetSnapshot } from './fleetSnapshot.js';
-import { createFleetHubClient, type FleetHubClient, type FleetHubResponse, FleetUnavailableError } from './hubClient.js';
+import { buildFleetSnapshot, splitLocalReporters } from './fleetSnapshot.js';
+import { createFleetHubClient, type FleetHubClient, type FleetHubMachine, type FleetHubResponse, FleetUnavailableError } from './hubClient.js';
 import { createPromptWatch } from './promptWatch.js';
 import { readExpectedSkillVersion } from './skillVersion.js';
 
@@ -189,8 +189,9 @@ export function handleFleetMessage(
   const ledgerView = context.ledger?.getView().catch(() => null) ?? Promise.resolve(null);
   const localView = Promise.race([ledgerView, new Promise<null>((resolve) => setTimeout(resolve, LEDGER_WAIT_MS, null))]);
   Promise.all([fleet.fetchFleet(), localView])
-    .then(async ([response, view]) => {
-      const snapshot = await snapshotWithPullRequests(requestId, response, view, context.getLocalGuard?.() ?? null, context);
+    .then(async ([hubResponse, view]) => {
+      const { cloud: response, reporters } = splitLocalReporters(hubResponse);
+      const snapshot = await snapshotWithPullRequests(requestId, response, view, context.getLocalGuard?.() ?? null, context, reporters);
       send(startBranchAnalysis(snapshot, view, response, context, send));
     })
     .catch(async (error: unknown) => {
@@ -225,8 +226,9 @@ async function snapshotWithPullRequests(
   localView: LedgerView | null,
   localGuard: GitGuardReport | null,
   context: FleetCommandContext,
+  reporters: readonly FleetHubMachine[] = [],
 ): Promise<FleetSnapshotMessage> {
-  const snapshot = promptWatchOf(context).annotate(askWatchOf(context).annotate(buildFleetSnapshot(requestId, response, localView, localGuard, readExpectedSkillVersion())));
+  const snapshot = promptWatchOf(context).annotate(askWatchOf(context).annotate(buildFleetSnapshot(requestId, response, localView, localGuard, readExpectedSkillVersion(), reporters)));
   try {
     const status = await collectFleetBranchPullRequests(localView, response, {
       git: context.git ?? defaultPullRequestGit,

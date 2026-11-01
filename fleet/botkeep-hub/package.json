@@ -1,0 +1,14 @@
+{
+  "name": "botkeep-fleet-hub",
+  "version": "1.0.0",
+  "description": "Fleet hub: machines POST signed reports, the board GETs the fleet. Runs on a Botkeep node so it stays up when the board or danh2 sleeps.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build-zip": "node build-zip.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

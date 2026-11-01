@@ -16,6 +16,21 @@ export interface FleetLocalRepo {
   readonly dirtyFiles: readonly string[];
 }
 
+/** A machine named `local-…` is one of the user's own computers (fleet/local-agent.mjs), not a cloud machine. */
+export const LOCAL_REPORTER_PREFIX = 'local-';
+
+/**
+ * Splits the hub's answer: local reporters count for file overlaps only. They must not become machine cards, get
+ * branch analysis or exec, show in the sleepers popup, or be picked to host a cloud task.
+ */
+export function splitLocalReporters(response: FleetHubResponse): { cloud: FleetHubResponse; reporters: FleetHubMachine[] } {
+  const isReporter = (machine: FleetHubMachine): boolean => machine.agent_id.startsWith(LOCAL_REPORTER_PREFIX);
+  return {
+    cloud: { ...response, machines: response.machines.filter((machine) => !isReporter(machine)) },
+    reporters: response.machines.filter(isReporter),
+  };
+}
+
 export function classifyFleetMachineState(receivedAt: number, nowMs: number): FleetMachineState {
   return nowMs - receivedAt > FLEET_STALE_AFTER_MS ? 'stale' : 'online';
 }
@@ -114,6 +129,7 @@ export function buildFleetSnapshot(
   localView: LedgerView | null,
   localGuard: GitGuardReport | null = null,
   expectedSkillVersion: string | null = null,
+  reporters: readonly FleetHubMachine[] = [],
 ): FleetSnapshotMessage {
   const localActiveSessions = localView?.sessions.filter((session) => session.open) ?? [];
   const localActiveBranches = [
@@ -214,7 +230,7 @@ export function buildFleetSnapshot(
         ...(activeTaskSlugs.length ? { activeTaskSlugs } : {}),
       };
     }),
-    overlaps: computeFleetOverlaps(response.machines, localRepos),
+    overlaps: computeFleetOverlaps([...response.machines, ...reporters], localRepos),
     ...(localGuard ? { localGuard } : {}),
     ...(localActiveBranches.length ? { localActiveBranches } : {}),
     ...(localActivePaths.length ? { localActivePaths } : {}),
