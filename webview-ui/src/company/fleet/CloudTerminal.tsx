@@ -134,10 +134,11 @@ export function CloudTerminal({
       ask.lastOpenedAt = now;
       ask.onHistory();
     };
-    element.addEventListener('wheel', onWheel, { passive: true });
+    // Capture phase: xterm handles the wheel on its own element and stops it there, so a bubbling listener never sees it.
+    element.addEventListener('wheel', onWheel, { passive: true, capture: true });
 
     return () => {
-      element.removeEventListener('wheel', onWheel);
+      element.removeEventListener('wheel', onWheel, { capture: true });
       cancelAnimationFrame(frame);
       observer.disconnect();
       unregister();
