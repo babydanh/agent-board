@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { FleetBranchActionMessage, FleetBranchAnalysis, FleetLocalBranchSnapshot, FleetMachineSnapshot, FleetPullRequest, FleetTaskCreateMessage } from '../../../../core/src/messages.js';
+import { BusyNote } from '../components/BusyNote.js';
 import { openPendingTab } from './cloudLavish.js';
 import { MAX_SESSIONS_PER_MACHINE, pickMachine, projectMachines, randomSuffix, slugFromPrompt } from './cloudTaskPick.js';
 import { CloudTerminal } from './CloudTerminal.js';
+import { FLEET_ACTION_LABEL } from './fleetActionLabel.js';
 import { fleetStore } from './fleetClient.js';
 import { createFleetDiffCommentSelector, type FleetDiffCommentSelection } from './fleetDiffComment.js';
 import { type FleetState, useFleetState } from './fleetStore.js';
@@ -251,26 +253,14 @@ function BranchAnalysisDetails({ analysis }: { analysis: FleetBranchAnalysis }) 
 
 function ActionStatus({ fleet }: { fleet: FleetState }) {
   if (fleet.action !== null) {
-    if (fleet.action.kind === 'branch') {
-      return (
-        <p role="status" className="text-sm text-text-muted">
-          Đang cập nhật nhánh {fleet.action.session}…
-        </p>
-      );
-    }
-    const what = {
-      terminal: 'Đang mở terminal',
-      task: 'Đang tạo worktree và mở Claude',
-      clean: 'Đang dọn phiên trên máy cloud',
-      wake: 'Đang bật máy cloud',
-      lavish: 'Đang nối cổng tới Lavish',
-      diff: 'Đang đọc thay đổi',
-      comment: 'Đang gửi tin tới phiên',
-    }[fleet.action.kind];
+    const { kind, machine, session, startedAt } = fleet.action;
+    const what = FLEET_ACTION_LABEL[kind];
     return (
-      <p role="status" className="text-sm text-text-muted">
-        {what} trên {fleet.action.machine} ({fleet.action.session})… máy đang ngủ thì mất 1–2 phút.
-      </p>
+      <BusyNote
+        text={kind === 'branch' ? `${what} ${session}…` : `${what} trên ${machine} (${session})… máy đang ngủ thì mất 1–2 phút.`}
+        since={startedAt}
+        onCancel={fleetStore.cancelAction}
+      />
     );
   }
   if (fleet.actionError !== null) {

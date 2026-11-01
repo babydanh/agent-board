@@ -189,3 +189,24 @@ export const COMPANY_LANES_VISIBLE_MIN = 2;
 /** How far one arrow key moves the drawer's resize handle; with Shift, the large step. */
 export const COMPANY_DRAWER_RESIZE_STEP_PX = 16;
 export const COMPANY_DRAWER_RESIZE_LARGE_STEP_PX = 64;
+
+/**
+ * How long the board waits for a cloud machine's answer before it stops locking the buttons and offers a retry.
+ * Each is the server's own limit for that command (server/src/fleet/constants.ts, cloudControl.ts) plus a margin,
+ * so a healthy slow command (a paused machine waking, a task being created) is never cut short.
+ */
+export const FLEET_ACTION_TIMEOUT_MS = {
+  terminal: 180_000,
+  task: 330_000,
+  clean: 150_000,
+  wake: 150_000,
+  lavish: 90_000,
+  lavishDelete: 90_000,
+  diff: 150_000,
+  history: 90_000,
+  comment: 60_000,
+  branch: 150_000,
+} as const;
+
+/** After this long a visible wait says it is slower than usual and offers to stop waiting. */
+export const BUSY_SLOW_AFTER_MS = 20_000;

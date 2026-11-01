@@ -27,6 +27,7 @@ import type {
   ServerMessage,
 } from '../../../../core/src/messages.js';
 import { newRequestId as defaultRequestId } from '../companyMessages.js';
+import { FLEET_ACTION_TIMEOUT_MS } from '../constants.js';
 
 export type FleetServerMessage =
   | FleetSnapshotMessage
@@ -51,6 +52,8 @@ export interface FleetAction {
   readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'diff' | 'history' | 'comment' | 'branch';
   readonly machine: string;
   readonly session: string;
+  /** Epoch ms the request was sent; the board shows the wait from it. */
+  readonly startedAt: number;
 }
 export type FleetSend = (message: ClientMessage) => void;
 
@@ -88,6 +91,8 @@ export interface FleetStore {
   openTerminal: (machine: string, session: string) => void;
   closeTerminal: () => void;
   createTask: (task: Omit<FleetTaskCreateMessage, 'type' | 'requestId'>) => void;
+  /** Stops waiting for the action in flight (its late answer is ignored) so the buttons work again. */
+  cancelAction: () => void;
   /** Removes a task the board started (tmux, worktrees, branch); the machine refuses while it holds unsaved work. */
   cleanTask: (machine: string, session: string) => void;
   /** Starts a machine InstaBox paused; the fleet is asked again once InstaBox accepted it. */
@@ -116,6 +121,7 @@ export interface FleetStoreEnvironment {
   readonly openUrl?: (url: string) => void;
 }
 
+const TIMED_OUT_REASON = 'Máy chủ chưa trả lời. Việc có thể vẫn đang chạy trên máy: làm mới danh sách để kiểm tra, hoặc thử lại.';
 const NO_CONNECTION_REASON = 'Chưa kết nối tới máy chủ, yêu cầu chưa được gửi.';
 const SEND_FAILED_REASON = 'Không gửi được yêu cầu xem Cloud.';
 
@@ -165,9 +171,15 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
   let state = createInitialFleetState();
   const listeners = new Set<() => void>();
 
+  let actionTimer: ReturnType<typeof setTimeout> | null = null;
+
   function commit(next: FleetState): void {
     if (next === state) return;
     state = next;
+    if (state.action === null && actionTimer !== null) {
+      clearTimeout(actionTimer);
+      actionTimer = null;
+    }
     for (const listener of listeners) listener();
   }
 
@@ -199,6 +211,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
         kind,
         machine: request.type === 'fleetBranchAction' ? 'local' : request.machine,
         session,
+        startedAt: Date.now(),
       },
       actionError: null,
       createdTask: null,
@@ -210,7 +223,15 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
       const detail = error instanceof Error ? error.message : String(error);
       if (kind === 'lavish') settleTab(null);
       commit({ ...state, action: null, actionError: detail === TRANSPORT_DISCONNECTED_ERROR ? NO_CONNECTION_REASON : SEND_FAILED_REASON });
+      return;
     }
+    // A machine that never answers must not lock every button for good: only a reconnect used to clear it.
+    const requestId = request.requestId;
+    actionTimer = setTimeout(() => {
+      if (state.action?.requestId !== requestId) return;
+      if (state.action.kind === 'lavish') settleTab(null);
+      commit({ ...state, action: null, actionError: TIMED_OUT_REASON });
+    }, FLEET_ACTION_TIMEOUT_MS[kind]);
   }
 
   function acceptAction(message: FleetServerMessage): boolean {
@@ -296,6 +317,11 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     },
     openTerminal: (machine, session) => {
       act({ type: 'fleetTerminalOpen', requestId: newRequestId(), machine, session }, 'terminal', session);
+    },
+    cancelAction: () => {
+      if (state.action === null) return;
+      if (state.action.kind === 'lavish') settleTab(null);
+      commit({ ...state, action: null, actionError: null });
     },
     closeTerminal: () => commit({ ...state, terminal: null }),
     createTask: (task) => {

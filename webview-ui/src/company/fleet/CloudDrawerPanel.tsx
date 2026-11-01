@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { BusyNote } from '../components/BusyNote.js';
 import { CloudHistory } from './CloudHistory.js';
 import { lavishOfSession, openPendingTab } from './cloudLavish.js';
 import { CloudTerminal } from './CloudTerminal.js';
@@ -39,7 +40,7 @@ export function CloudDrawerPanel({ machine, session, onClose }: { machine: strin
                 className="company-btn company-btn-sm company-btn-ghost"
                 onClick={() => fleetStore.openLavish(machine, entry.key, openPendingTab())}
               >
-                Mở Lavish
+                {fleet.action?.kind === 'lavish' && fleet.action.session === entry.key ? 'Đang mở…' : 'Mở Lavish'}
               </button>
               <button
                 type="button"
@@ -55,9 +56,6 @@ export function CloudDrawerPanel({ machine, session, onClose }: { machine: strin
               </button>
             </li>
           ))}
-          {attached && fleet.actionError !== null && (
-            <li role="alert" className="text-xs text-warning">{fleet.actionError}</li>
-          )}
         </ul>
       )}
       {attached && (
@@ -74,10 +72,16 @@ export function CloudDrawerPanel({ machine, session, onClose }: { machine: strin
           {history !== null && <CloudHistory text={history.text} truncated={history.truncated} label={`${machine} · ${session}`} onClose={fleetStore.closeHistory} />}
         </div>
       )}
+      {attached && fleet.actionError !== null && (
+        <p role="alert" className="rounded border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">{fleet.actionError}</p>
+      )}
       {!attached && (connecting || fleet.actionError === null) && (
-        <p role="status" className="text-sm text-text-muted">
-          Đang nối tới {machine} ({session})… máy đang ngủ thì mất 1–2 phút.
-        </p>
+        <BusyNote
+          skeleton
+          text={`Đang nối tới ${machine} (${session})… máy đang ngủ thì mất 1–2 phút.`}
+          since={connecting ? fleet.action?.startedAt : undefined}
+          onCancel={connecting ? fleetStore.cancelAction : undefined}
+        />
       )}
       {!attached && !connecting && fleet.actionError !== null && (
         <div role="alert" className="flex flex-col gap-2 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">

@@ -31,6 +31,7 @@ import { sendCloudLine } from '../fleet/cloudInput.js';
 import { cloudNodeId, cloudTreeNodes, parseCloudNodeId, pausedMachineNotice, readCloudSeen, rememberCloud, writeCloudSeen } from '../fleet/cloudNodes.js';
 import { pendingCloudRow } from '../fleet/cloudRows.js';
 import { randomSuffix, slugFromPrompt } from '../fleet/cloudTaskPick.js';
+import { FLEET_ACTION_LABEL } from '../fleet/fleetActionLabel.js';
 import { fleetStore } from '../fleet/fleetClient.js';
 import { useFleetState } from '../fleet/fleetStore.js';
 import { type CloudRequest, FleetView } from '../fleet/FleetView.js';
@@ -98,6 +99,7 @@ import { AgentSessionsPage } from './AgentSessionsPage.js';
 import { AgentSidebar } from './AgentSidebar.js';
 import { AttentionBar } from './AttentionBar.js';
 import { BoardTopBar } from './BoardTopBar.js';
+import { BusyNote } from './BusyNote.js';
 import { CommandPalette } from './CommandPalette.js';
 import { CompanyBoard } from './CompanyBoard.js';
 import { DetailDrawer } from './DetailDrawer.js';
@@ -1149,6 +1151,15 @@ export function BoardShell({ client }: BoardShellProps) {
         >
           {state.workspaceSelectionNotice}
         </p>
+      )}
+      {fleet.action !== null && fleet.action.kind !== 'terminal' && activePage !== 'cloud' && (
+        <div data-testid="fleet-busy" className="bg-warning/12 px-3 py-1.5">
+          <BusyNote
+            text={`${FLEET_ACTION_LABEL[fleet.action.kind]} trên ${fleet.action.machine} (${fleet.action.session})…`}
+            since={fleet.action.startedAt}
+            onCancel={fleetStore.cancelAction}
+          />
+        </div>
       )}
       {sessionNotice !== null && (
         <p role="status" data-testid="session-open-notice" className="flex items-center gap-2 bg-warning/12 px-3 py-1.5 text-2xs text-warning">
