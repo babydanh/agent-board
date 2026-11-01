@@ -34,6 +34,10 @@ A machine agent SHALL measure a lane's changed files and its merged/staged state
 - **WHEN** a checkout such as the Flutter SDK on branch `stable` has default branch `master` and an unrelated remote branch named `main`
 - **THEN** its changes are measured against `master`, and it does not report the 105 commits that separate it from the unrelated `main`
 
+#### Scenario: Release branch with its own commits
+- **WHEN** a long-lived branch (main, master, develop, stable, beta, release/*) is level with its upstream but carries commits its default branch lacks (cherry-picks on `stable`)
+- **THEN** only its uncommitted and unpushed edits are reported, measured against its own upstream
+
 #### Scenario: Pushed branch awaiting merge
 - **WHEN** a lane has zero commits ahead of its upstream but its work is not yet in the default branch
 - **THEN** its changed files are still reported

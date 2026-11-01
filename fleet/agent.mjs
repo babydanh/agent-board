@@ -146,6 +146,8 @@ export function contentIn(path, ref) {
   return Boolean(target) && git(path, 'merge-tree', '--write-tree', ref, 'HEAD').split('\n')[0] === target;
 }
 
+const LONG_LIVED_BRANCH = /^(main|master|develop|dev|stable|beta|release\/.+)$/;
+
 /**
  * The repository's own default branch as a remote ref ("origin/master"), from origin/HEAD. Falls back to
  * origin/main when origin/HEAD is absent or points at a ref that does not exist: some repos have an unrelated
@@ -163,7 +165,12 @@ export function defaultBranch(path) {
  * different bases can be a few lines off; the local overlap.py merge-tree check is exact.
  */
 export function changedRanges(path) {
-  const base = git(path, 'merge-base', defaultBranch(path), 'HEAD');
+  // A long-lived branch (main, release, stable...) is not work in flight: it carries commits its default branch lacks
+  // (release cherry-picks), so only what it holds beyond its own upstream counts.
+  const upstream = LONG_LIVED_BRANCH.test(git(path, 'branch', '--show-current'))
+    ? git(path, 'rev-parse', '--verify', '--quiet', '@{upstream}')
+    : '';
+  const base = upstream || git(path, 'merge-base', defaultBranch(path), 'HEAD');
   if (!base) return [];
   const out = git(path, 'diff', '-U0', '--no-color', '--no-ext-diff', base, '--');
   const files = new Map();

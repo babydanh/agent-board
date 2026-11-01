@@ -208,6 +208,32 @@ test('TC-BASE-DEFAULT-02: a pushed but unmerged branch still lists its changed f
   assert.deepEqual(changedRanges(clone), [{ path: 'a.txt', ranges: [[2, 2]] }]);
 });
 
+/** A release branch like Flutter's `stable`: pushed with its own commits that are not in master, checked out level with its upstream. */
+function cloneOnReleaseBranch() {
+  const clone = cloneWithUnrelatedMain();
+  gitIn(clone, 'checkout', '-q', '-b', 'stable', 'origin/master');
+  writeFileSync(join(clone, 'a.txt'), 'one\ncherry-picked\n');
+  gitIn(clone, 'commit', '-q', '-am', 'cherry-pick only on stable');
+  gitIn(clone, 'push', '-q', '-u', 'origin', 'stable');
+  return clone;
+}
+
+test('TC-BASE-LONGLIVED-01: a long-lived branch level with its upstream reports no changes', () => {
+  const clone = cloneOnReleaseBranch();
+  assert.equal(gitIn(clone, 'rev-list', '--count', 'origin/master..HEAD').trim(), '1');
+  assert.deepEqual(changedRanges(clone), []);
+});
+
+test('TC-BASE-LONGLIVED-02: on a long-lived branch only uncommitted and unpushed edits count', () => {
+  const clone = cloneOnReleaseBranch();
+  writeFileSync(join(clone, 'b.txt'), 'new\n');
+  gitIn(clone, 'add', 'b.txt');
+  gitIn(clone, 'commit', '-q', '-m', 'unpushed');
+  writeFileSync(join(clone, 'a.txt'), 'one\ncherry-picked\nlocal edit\n');
+  const paths = changedRanges(clone).map((change) => change.path).sort();
+  assert.deepEqual(paths, ['a.txt', 'b.txt']);
+});
+
 test('TC-BASE-DEFAULT-03: without a usable origin/HEAD the default branch is origin/main', () => {
   const dir = mkdtempSync(join(tmpdir(), 'base-nohead-'));
   gitIn(dir, 'init', '-q', '-b', 'main');
