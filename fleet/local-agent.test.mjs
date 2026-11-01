@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -94,6 +94,21 @@ test('TC-LOCALAGENT-05: a worktree listed twice is reported once, and a missing 
   assert.deepEqual(report.repos.map((row) => row.path), [dir]);
   assert.equal(report.agent_id, 'local-pc');
   assert.equal(report.guard, null);
+});
+
+test('TC-LOCALAGENT-08: past the hub limit of 20 repos, the lanes with work are kept and idle ones dropped', () => {
+  const dir = tmp('local-agent-limit');
+  const paths = Array.from({ length: 30 }, (_, i) => join(dir, `lane-${i}`));
+  for (const path of paths) mkdirSync(path);
+  const busy = new Set(paths.slice(25));
+  const report = buildReport(
+    { id: 'local-pc', roots: ['r'] },
+    (path) => ({ path, repo: 'r', branch: 'b', dirty_files: busy.has(path) ? ['a.ts'] : [], changes: [] }),
+    () => paths,
+  );
+  assert.equal(report.repos.length, 20);
+  assert.equal(paths.slice(25).every((path) => report.repos.some((row) => row.path === path)), true);
+  assert.equal(report.repos_truncated, true);
 });
 
 test('TC-LOCALAGENT-06: the key is created once with owner-only mode and never replaced', () => {

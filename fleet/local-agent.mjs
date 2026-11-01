@@ -18,6 +18,8 @@ import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, re
 import { signJwt } from './jwt.mjs';
 
 export const LOCAL_REPORT_INTERVAL_MS = 60_000;
+// The hub keeps at most this many repos per machine (fleet/hub.mjs); a longer list would silently lose its tail.
+const HUB_REPO_LIMIT = 20;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const DEFAULT_CONFIG = join(homedir(), '.pixel-agents', 'fleet-local.json');
 const DEFAULT_KEY = join(homedir(), '.pixel-agents', 'fleet-local-key.pem');
@@ -91,8 +93,14 @@ export function buildReport({ id, roots }, rowOf = repoRow, listOf = (root) => p
       repos.push(rowOf(path));
     }
   }
+  // Over the hub limit, keep the lanes with work (most edits first): idle checkouts cannot overlap anything.
+  const activity = (row) => (row.changes?.length ?? 0) + (row.dirty_files?.length ?? 0);
+  const kept = repos.length > HUB_REPO_LIMIT ? [...repos].sort((a, b) => activity(b) - activity(a)).slice(0, HUB_REPO_LIMIT) : repos;
   // No sessions, tmux or guard here: the board already reads local sessions and git risk from its own ledger.
-  return fitReport({ agent_id: id, disk_free_gb: null, skill_version: null, sessions: [], tmux: [], lavish: [], viec: [], repos, guard: null });
+  return fitReport({
+    agent_id: id, disk_free_gb: null, skill_version: null, sessions: [], tmux: [], lavish: [], viec: [], repos: kept, guard: null,
+    ...(kept.length < repos.length ? { repos_truncated: true } : {}),
+  });
 }
 
 export async function sendReport(config, report, fetcher = fetch) {
