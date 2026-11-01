@@ -16,6 +16,7 @@ import type {
   FleetMachineWakeMessage,
   FleetPullRequest,
   FleetRequestMessage,
+  FleetSessionRestartMessage,
   FleetSnapshotMessage,
   FleetTaskCleanedMessage,
   FleetTaskCleanMessage,
@@ -49,7 +50,7 @@ export interface FleetTerminal {
 /** One in-flight action (open a terminal / create a task); only the latest one is tracked. */
 export interface FleetAction {
   readonly requestId: string;
-  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'diff' | 'history' | 'comment' | 'branch';
+  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'restart' | 'diff' | 'history' | 'comment' | 'branch';
   readonly machine: string;
   readonly session: string;
   /** Epoch ms the request was sent; the board shows the wait from it. */
@@ -102,6 +103,8 @@ export interface FleetStore {
   openLavish: (machine: string, key: string, tab?: PendingTab | null) => void;
   /** Deletes one Lavish page on the machine (ends its session, removes the file); the agent can write it again. */
   deleteLavish: (machine: string, key: string) => void;
+  /** Restarts the session's Claude on the same conversation (claude --resume); the machine refuses while Claude looks busy. */
+  restartSession: (machine: string, session: string) => void;
   requestDiff: (machine: string, path: string) => void;
   requestHistory: (machine: string, session: string) => void;
   closeHistory: () => void;
@@ -198,7 +201,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
   }
 
   function act(
-    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetLavishDeleteMessage | FleetDiffRequestMessage | FleetHistoryRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage,
+    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetLavishDeleteMessage | FleetSessionRestartMessage | FleetDiffRequestMessage | FleetHistoryRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage,
     kind: FleetAction['kind'],
     session: string,
   ): void {
@@ -343,6 +346,9 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     },
     deleteLavish: (machine, key) => {
       act({ type: 'fleetLavishDelete', requestId: newRequestId(), machine, key }, 'lavishDelete', key);
+    },
+    restartSession: (machine, session) => {
+      act({ type: 'fleetSessionRestart', requestId: newRequestId(), machine, session }, 'restart', session);
     },
     requestHistory: (machine, session) => {
       act({ type: 'fleetHistoryRequest', requestId: newRequestId(), machine, session }, 'history', session);

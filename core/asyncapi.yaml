@@ -295,6 +295,7 @@ components:
         - $ref: '#/components/schemas/FleetMachineWakeMessage'
         - $ref: '#/components/schemas/FleetLavishOpenMessage'
         - $ref: '#/components/schemas/FleetLavishDeleteMessage'
+        - $ref: '#/components/schemas/FleetSessionRestartMessage'
         - $ref: '#/components/schemas/FleetDiffRequestMessage'
         - $ref: '#/components/schemas/FleetHistoryRequestMessage'
         - $ref: '#/components/schemas/FleetCloudCommentSendMessage'
@@ -6607,6 +6608,24 @@ components:
         key:
           type: string
           pattern: '^[a-f0-9]{8,64}$'
+
+    FleetSessionRestartMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, machine, session]
+      description: Restart the Claude Code of one cloud tmux session on the same conversation (stop it, then claude --resume; privileged). Refused while Claude wrote in the last 30 seconds; answered by a fleetCommandResult.
+      properties:
+        type:
+          const: fleetSessionRestart
+        requestId:
+          type: string
+          format: uuid
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        session:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
 
     FleetLavishDeleteMessage:
       type: object

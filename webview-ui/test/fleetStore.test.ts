@@ -286,3 +286,18 @@ describe('fleet history', () => {
     expect(store.getSnapshot().actionError).toBe('no session');
   });
 });
+
+describe('fleet session restart', () => {
+  it('asks the machine to restart the Claude of a session and waits for the answer', () => {
+    const sent: ClientMessage[] = [];
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => 'x1' });
+
+    store.restartSession('danh', 'heloo-74pr');
+
+    expect(sent).toEqual([{ type: 'fleetSessionRestart', requestId: 'x1', machine: 'danh', session: 'heloo-74pr' }]);
+    expect(store.getSnapshot().action).toMatchObject({ kind: 'restart', machine: 'danh', session: 'heloo-74pr' });
+    store.accept({ type: 'fleetCommandResult', requestId: 'x1', ok: false, code: 'failed', reason: 'Claude dang lam viec' } as ServerMessage);
+    expect(store.getSnapshot().action).toBeNull();
+    expect(store.getSnapshot().actionError).toBe('Claude dang lam viec');
+  });
+});

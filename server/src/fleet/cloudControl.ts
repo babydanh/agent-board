@@ -56,6 +56,7 @@ import {
 import { LAVISH_DELETE_SCRIPT } from './lavishDelete.js';
 import { PANE_PEEK_SCRIPT, parsePanePeek } from './paneAsk.js';
 import { PANE_PROMPTS_SCRIPT, parsePanePrompts } from './panePrompts.js';
+import { SESSION_RESTART_SCRIPT } from './sessionRestart.js';
 import { TASK_CLEAN_SCRIPT } from './taskClean.js';
 
 export type FleetTaskRepo = (typeof FLEET_TASK_REPOS)[number];
@@ -181,6 +182,19 @@ export class CloudControl {
     if (result.code !== 0 || !/^OK /m.test(result.stdout)) {
       const said = `${result.stdout}\n${result.stderr}`.trim().split('\n').filter(Boolean).pop();
       throw new CloudControlError('failed', said ?? `clean exit ${result.code}`);
+    }
+  }
+
+  /** Restarts the Claude of one tmux session on the same conversation (`claude --resume`); the machine refuses while Claude looks busy. */
+  async restartSession(machine: string, slug: string): Promise<void> {
+    if (!FLEET_MACHINE_NAME.test(machine) || !FLEET_TASK_SLUG.test(slug)) {
+      throw new CloudControlError('bad_input', 'invalid session');
+    }
+    const home = await this.#wake(machine);
+    const result = await this.deps.run(['exec', machine, '--timeout', '90', '--stdin', '--', 'bash', '-s', '--', slug], home, SESSION_RESTART_SCRIPT);
+    if (result.code !== 0 || !/^OK /m.test(result.stdout)) {
+      const said = `${result.stdout}\n${result.stderr}`.trim().split('\n').filter(Boolean).pop();
+      throw new CloudControlError('failed', said ?? `restart exit ${result.code}`);
     }
   }
 

@@ -202,6 +202,7 @@ export const FLEET_ACTION_TIMEOUT_MS = {
   wake: 150_000,
   lavish: 90_000,
   lavishDelete: 90_000,
+  restart: 150_000,
   diff: 150_000,
   history: 90_000,
   comment: 60_000,

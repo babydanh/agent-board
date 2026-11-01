@@ -8,6 +8,7 @@ export const FLEET_ACTION_LABEL: Record<FleetAction['kind'], string> = {
   wake: 'Đang bật máy cloud',
   lavish: 'Đang nối cổng tới Lavish',
   lavishDelete: 'Đang xóa trang Lavish',
+  restart: 'Đang chạy lại Claude',
   diff: 'Đang đọc thay đổi',
   history: 'Đang lấy lịch sử',
   comment: 'Đang gửi tin tới phiên',
