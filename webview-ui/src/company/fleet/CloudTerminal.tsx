@@ -13,6 +13,7 @@ import { shouldOpenHistory } from './cloudHistoryTrigger.js';
 import { registerCloudInput } from './cloudInput.js';
 import { exitScreen } from './cloudTerminalExit.js';
 import { shouldReopenTerminal } from './cloudTerminalReopen.js';
+import { keepWheelOutOfSession } from './cloudWheel.js';
 
 /** xterm's own default stack starts with Courier New, which is thin and uneven on Windows; these ship with the OS. */
 const TERMINAL_FONT_FAMILY = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
@@ -71,6 +72,7 @@ export function CloudTerminal({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(element);
+    keepWheelOutOfSession(term);
     // The default DOM renderer repaints thousands of nodes per scroll or TUI redraw; WebGL draws on the GPU.
     // Without WebGL (or after the context is lost) xterm keeps drawing with its DOM renderer.
     try {
