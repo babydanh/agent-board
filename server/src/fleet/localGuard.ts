@@ -10,7 +10,8 @@ export const LOCAL_GUARD_SCAN_INTERVAL_MS = 10 * 60_000;
 const BACKUP_INTERVAL_MS = 30 * 60_000;
 const PRUNE_INTERVAL_MS = 6 * 60 * 60_000;
 const MAX_REPORT_BYTES = 2 * 1024 * 1024;
-const DEFAULT_WINDOWS_ROOTS = [
+// A function, not a constant: homedir() read while the module loads is undefined under a test that fakes it later.
+const defaultWindowsRoots = (): string[] => [
   'V:/Duancanhan/Project_QuanLyGiaiDau',
   'V:/pixel-agents',
   path.join(homedir(), '.omp'),
@@ -22,7 +23,7 @@ export function localGuardRoots(value = process.env['PIXEL_AGENTS_GIT_GUARD_ROOT
       .split(path.delimiter)
       .map((root) => root.trim())
       .filter(Boolean);
-  return process.platform === 'win32' ? [...DEFAULT_WINDOWS_ROOTS] : [process.cwd()];
+  return process.platform === 'win32' ? defaultWindowsRoots() : [process.cwd()];
 }
 
 async function runChild(command: string, args: string[]): Promise<void> {
