@@ -56,6 +56,34 @@ test('TC-LOCALAGENT-04: a real repository row names the branch and the dirty pat
   assert.equal(JSON.stringify(row).includes('two'), false);
 });
 
+test('TC-BASE-DEFAULT-04: a row measures against the repository default branch, not origin/main', () => {
+  const base = tmp('local-agent-default');
+  const origin = join(base, 'origin.git');
+  const seed = join(base, 'seed');
+  const clone = join(base, 'clone');
+  git(base, 'init', '-q', '--bare', '-b', 'master', origin);
+  git(base, 'init', '-q', '-b', 'master', seed);
+  writeFileSync(join(seed, 'a.txt'), 'one\n');
+  git(seed, 'add', 'a.txt');
+  git(seed, 'commit', '-q', '-m', 'master');
+  git(seed, 'push', '-q', origin, 'master');
+  git(seed, 'checkout', '-q', '--orphan', 'main');
+  git(seed, 'rm', '-q', '-rf', '.');
+  writeFileSync(join(seed, 'other.txt'), 'unrelated\n');
+  git(seed, 'add', 'other.txt');
+  git(seed, 'commit', '-q', '-m', 'unrelated main');
+  git(seed, 'push', '-q', origin, 'main');
+  git(base, 'clone', '-q', origin, clone);
+  git(clone, 'checkout', '-q', '-b', 'stable', 'origin/master');
+
+  const row = repoRow(clone);
+
+  assert.equal(row.origin_main, git(clone, 'rev-parse', 'origin/master').trim());
+  assert.notEqual(row.origin_main, git(clone, 'rev-parse', 'origin/main').trim());
+  assert.equal(row.merged, true);
+  assert.deepEqual(row.changes, []);
+});
+
 test('TC-LOCALAGENT-05: a worktree listed twice is reported once, and a missing folder is skipped', () => {
   const dir = tmp('local-agent-dedupe');
   const report = buildReport(
