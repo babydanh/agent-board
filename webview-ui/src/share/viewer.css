@@ -1,0 +1,8 @@
+/* The view-only share page: a header, then the terminal. Colours here are page chrome only. */
+html, body { height: 100%; margin: 0; background: #11111b; color: #cdd6f4; font-family: Inter, system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid #313244; font-size: 14px; }
+header strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+header #status { flex: 1 1 auto; color: #a6adc8; font-size: 12px; }
+header em { flex: none; padding: 2px 8px; border: 1px solid #45475a; border-radius: 999px; font-size: 12px; font-style: normal; color: #a6adc8; }
+main { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }

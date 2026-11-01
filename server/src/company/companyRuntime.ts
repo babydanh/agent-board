@@ -566,6 +566,8 @@ class NativeCompanyRuntime implements CompanyRuntime {
       },
       isLive: (sessionId, runEpoch) => this.isRunLive(sessionId, runEpoch),
       size: () => ({ cols: COMPANY_DEFAULT_TERMINAL_COLS, rows: COMPANY_DEFAULT_TERMINAL_ROWS }),
+      liveEpoch: (sessionId) => this.runs.get(sessionId)?.runEpoch,
+      events: (listener) => this.ptyClient.onEvent(listener),
     });
     this.terminal = this.gateway;
     this.effects = {

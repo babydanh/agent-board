@@ -39,6 +39,7 @@ import {
   type SessionMenuFacts,
   sessionMenuItems,
   sessionNameProblem,
+  type ShareRequest,
   sleepingMenuItems,
   squadRunMenuItems,
   taskCardMenuItems,
@@ -89,6 +90,8 @@ export interface AgentContextMenuProps {
   onSquadRemoved: (ref: { runId: string; workspacePath: string }) => void;
   projectStore?: ProjectStore;
   onProjectNodeAction?: (node: ProjectTreeNode, action: ProjectNodeAction) => void;
+  /** "Share session…": the board opens the share dialog for this screen. */
+  onShare?: (request: ShareRequest) => void;
 }
 
 /** The actions that ask first. Each names the item that opened the question. */
@@ -339,6 +342,7 @@ export function AgentContextMenu({
   onSquadRemoved,
   projectStore,
   onProjectNodeAction,
+  onShare,
 }: AgentContextMenuProps) {
   const { subject, anchor, returnFocus } = request;
   const sessionId = actingSessionId(subject);
@@ -880,6 +884,13 @@ export function AgentContextMenu({
       case 'cloudHandoff':
         sendHandoff(paneId);
         return;
+      case 'share': {
+        const name = agent?.name ?? agent?.title ?? session?.name ?? paneId ?? sessionId ?? '';
+        if (paneId !== null) onShare?.({ kind: 'herdr', paneId, name });
+        else if (sessionId !== null) onShare?.({ kind: 'company', sessionId, name });
+        onClose();
+        return;
+      }
       case 'assignWork':
         if (workAgent !== null && work.folder !== null) {
           onWorkDialog({

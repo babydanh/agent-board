@@ -18,8 +18,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
 
-import type { CompanyTerminalGateway, CompanyTerminalHandle } from './clientCommands.js';
+import type { CompanyTerminalGateway, CompanyTerminalHandle, TerminalPeek } from './clientCommands.js';
 import { CompanyError } from './companyError.js';
 import {
   COMPANY_DEFAULT_TERMINAL_COLS,
@@ -27,6 +28,7 @@ import {
   COMPANY_TERMINAL_INPUT_MAX_BYTES,
 } from './constants.js';
 import type { PtyClient } from './ptyClient.js';
+import type { PtyHostEvent } from './ptyHost.js';
 
 /** A reattached viewer replays at most this much of the framebuffer. */
 const MAX_SNAPSHOT_BYTES = 64 * 1024;
@@ -40,6 +42,10 @@ export interface RunnerTerminalGatewayOptions {
   readonly isLive: (sessionId: string, runEpoch: number) => boolean;
   /** Size the runner's PTY was started with. */
   readonly size: (sessionId: string, runEpoch: number) => { cols: number; rows: number };
+  /** The epoch of the run this session has now, or undefined without one. Needed for `peek`. */
+  readonly liveEpoch?: (sessionId: string) => number | undefined;
+  /** The PTY helper's output and exit events, for `peek`. */
+  readonly events?: (listener: (event: PtyHostEvent) => void) => () => void;
 }
 
 interface ViewerLease {
@@ -96,6 +102,40 @@ export class RunnerTerminalGateway implements CompanyTerminalGateway {
     this.leases.set(key, lease);
     onLeaseGranted?.(lease.leaseId);
     return { leaseId: lease.leaseId, cols: resolvedCols, rows: resolvedRows, replay };
+  }
+
+  /**
+   * A read-only view of the live run: the screen as text, then its output and exit. It reads the
+   * helper's framebuffer and events directly, so it takes no lease and cannot reach the process.
+   */
+  peek(sessionId: string): TerminalPeek | undefined {
+    const epoch = this.options.liveEpoch?.(sessionId);
+    const events = this.options.events;
+    if (epoch === undefined || events === undefined) return undefined;
+    const key = runnerPtySessionId(sessionId, epoch);
+    const { cols, rows } = this.options.size(sessionId, epoch);
+    return {
+      cols,
+      rows,
+      snapshot: async () => {
+        const framebuffer = await this.options.client.snapshot(key);
+        return Buffer.from(boundFramebuffer(framebuffer), 'base64').toString('utf8');
+      },
+      onData: (listener) => {
+        // A character split across two chunks must not turn into two replacement marks.
+        const decoder = new StringDecoder('utf8');
+        return events((event) => {
+          if (event.type !== 'data' || event.sessionId !== key) return;
+          const text = decoder.write(Buffer.from(event.data, 'base64'));
+          if (text !== '') listener(text);
+        });
+      },
+      onExit: (listener) =>
+        events((event) => {
+          if (event.type !== 'exit' || event.sessionId !== key) return;
+          listener({ exitCode: event.exitCode, ...(event.signal === undefined ? {} : { signal: event.signal }) });
+        }),
+    };
   }
 
   async write(sessionId: string, runEpoch: number, data: string, leaseId: string): Promise<void> {

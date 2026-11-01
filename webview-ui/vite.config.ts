@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { buildSync } from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Plugin } from 'vite';
@@ -22,6 +23,35 @@ interface DecodedCache {
   walls: ReturnType<typeof decodeAllWalls> | null;
   carpets: ReturnType<typeof decodeAllCarpets> | null;
   furniture: ReturnType<typeof decodeAllFurniture> | null;
+}
+
+// ── Share viewer ──────────────────────────────────────────────────────────────
+
+/**
+ * The view-only share page is its own small bundle (xterm and a socket, no React), so a link
+ * opens fast and never loads the board. It is built after Vite writes the main bundle, which
+ * empties the output folder first, into `<outDir>/share-assets/` where the server serves it.
+ */
+function shareViewerPlugin(): Plugin {
+  let outDir = path.resolve(__dirname, '../dist/webview');
+  return {
+    name: 'share-viewer',
+    apply: 'build',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    writeBundle() {
+      buildSync({
+        entryPoints: [path.resolve(__dirname, 'src/share/viewer.ts')],
+        bundle: true,
+        minify: true,
+        format: 'iife',
+        target: 'es2022',
+        outfile: path.join(outDir, 'share-assets', 'viewer.js'),
+        logLevel: 'silent',
+      });
+    },
+  };
 }
 
 // ── Vite plugin ───────────────────────────────────────────────────────────────
@@ -120,7 +150,7 @@ function browserMockAssetsPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [tailwindcss(), react(), browserMockAssetsPlugin()],
+  plugins: [tailwindcss(), react(), browserMockAssetsPlugin(), shareViewerPlugin()],
   server: {
     // Dev-only: allow reaching `vite --host` from another device on a
     // Tailscale network (Vite rejects non-localhost Host headers by default).

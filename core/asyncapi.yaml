@@ -171,6 +171,8 @@ components:
         - $ref: '#/components/schemas/FleetLavishOpenedMessage'
         - $ref: '#/components/schemas/FleetDiffMessage'
         - $ref: '#/components/schemas/FleetHistoryMessage'
+        # Share (privileged; view-only links to cloud terminals)
+        - $ref: '#/components/schemas/ShareResultMessage'
         # Project tree (privileged; project, checkout and session data)
         - $ref: '#/components/schemas/ProjectTreeSnapshotMessage'
         - $ref: '#/components/schemas/ProjectStoppedPageMessage'
@@ -320,6 +322,10 @@ components:
         - $ref: '#/components/schemas/ProjectImageSaveMessage'
         - $ref: '#/components/schemas/ProjectBranchCompareRequestMessage'
         - $ref: '#/components/schemas/ProjectMergePreviewRequestMessage'
+        # Share (privileged)
+        - $ref: '#/components/schemas/ShareCreateMessage'
+        - $ref: '#/components/schemas/ShareRevokeMessage'
+        - $ref: '#/components/schemas/ShareListRequestMessage'
         # Library (privileged; pages and commands)
         - $ref: '#/components/schemas/LibrarySnapshotRequest'
         - $ref: '#/components/schemas/LibrarySkillPreviewRequest'
@@ -9491,6 +9497,121 @@ components:
           type: integer
           minimum: 0
           description: How many sessions match the query over all pages.
+
+    ShareInfo:
+      type: object
+      additionalProperties: false
+      description: >-
+        One live view-only link. `token` is the secret in the link's URL; the client builds the
+        URL from its own origin, so it works through whatever address the board was opened on.
+      required: [token, kind, label, createdAt, expiresAt]
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 64
+        kind:
+          type: string
+          enum: [cloud, company, herdr]
+          description: What the link shows.
+        label:
+          type: string
+          maxLength: 200
+        createdAt:
+          type: integer
+          description: Epoch milliseconds.
+        expiresAt:
+          type: integer
+          description: Epoch milliseconds.
+    ShareCreateMessage:
+      type: object
+      additionalProperties: false
+      description: >-
+        Opens a view-only link to one screen: a cloud terminal (`terminalId`), an omp session the board
+        runs (`sessionId`) or a herdr pane (`paneId`); exactly the one field `kind` names. The answer is
+        a shareResult carrying the new link's token. Refused for a terminal that is not one of those, so
+        a link can never expose a local shell.
+      required: [type, requestId, kind, label]
+      properties:
+        type:
+          const: shareCreate
+        requestId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [cloud, company, herdr]
+        terminalId:
+          type: integer
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 200
+        paneId:
+          type: string
+          minLength: 1
+          maxLength: 200
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+        ttlMinutes:
+          type: integer
+          minimum: 1
+          maximum: 10080
+          description: Lifetime of the link; the server uses 24 hours when absent.
+    ShareRevokeMessage:
+      type: object
+      additionalProperties: false
+      description: Ends one link at once; people watching it are disconnected. The answer is a shareResult.
+      required: [type, requestId, token]
+      properties:
+        type:
+          const: shareRevoke
+        requestId:
+          type: string
+          format: uuid
+        token:
+          type: string
+          minLength: 16
+          maxLength: 64
+    ShareListRequestMessage:
+      type: object
+      additionalProperties: false
+      description: Asks for the live links. The answer is a shareResult.
+      required: [type, requestId]
+      properties:
+        type:
+          const: shareListRequest
+        requestId:
+          type: string
+          format: uuid
+    ShareResultMessage:
+      type: object
+      additionalProperties: false
+      description: >-
+        The answer to every share command, always carrying the live links after the command ran.
+        `token` names the link a shareCreate just made.
+      required: [type, requestId, ok, shares]
+      properties:
+        type:
+          const: shareResult
+        requestId:
+          type: string
+          format: uuid
+        ok:
+          type: boolean
+        reason:
+          type: string
+          description: Vietnamese reason when `ok` is false.
+        token:
+          type: string
+          minLength: 16
+          maxLength: 64
+        shares:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShareInfo'
 
     ProjectDiffMessage:
       type: object

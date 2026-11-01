@@ -100,7 +100,21 @@ export interface CompanyTerminalHandle {
  * the native capability is not installed, which the UI reports as unavailable
  * rather than substituting piped text.
  */
+/**
+ * A read-only view of a run's terminal, for a share link: the screen now, the output as it comes and
+ * the exit. It has no way to write or resize, and taking one never moves the controller lease.
+ */
+export interface TerminalPeek {
+  readonly cols: number;
+  readonly rows: number;
+  snapshot(): Promise<string>;
+  onData(listener: (chunk: string) => void): () => void;
+  onExit(listener: (exit: { exitCode: number; signal?: number }) => void): () => void;
+}
+
 export interface CompanyTerminalGateway {
+  /** A read-only view of the session's live terminal; absent when it has no live run or this host cannot offer one. */
+  peek?(sessionId: string): TerminalPeek | undefined;
   attach(
     sessionId: string,
     runEpoch: number,

@@ -12,7 +12,8 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 
 import type { ProjectTreeNode } from '../../../../core/src/messages.js';
 import { cloudAgentCards } from '../agentBoard.js';
-import type { AgentMenuRequest, ProjectNodeAction, WorkItemMenuAction } from '../agentMenu.js';
+import type { AgentMenuRequest, ProjectNodeAction, ShareRequest, WorkItemMenuAction } from '../agentMenu.js';
+import { shareRequestForNode } from '../agentMenu.js';
 import { boardFlow, buildBoardLanes, planningPrompts } from '../boardView.js';
 import { buildPaletteItems, type PaletteActionId, type PaletteItem } from '../commandPalette.js';
 import type { CompanyClient } from '../companyClient.js';
@@ -81,6 +82,7 @@ import {
   selectionForSession,
   selectionForTask,
 } from '../selection.js';
+import { ShareDialog } from '../share/ShareDialog.js';
 import { findShortcutId, matchShortcut } from '../shortcuts.js';
 import {
   clampSidebarWidth,
@@ -183,6 +185,7 @@ export function BoardShell({ client }: BoardShellProps) {
   const [stoppedNode, setStoppedNode] = useState<ProjectTreeNode | null>(null);
   /** The full stopped-sessions list is open. */
   const [stoppedHistoryOpen, setStoppedHistoryOpen] = useState(false);
+  const [shareRequest, setShareRequest] = useState<ShareRequest | null>(null);
   const [selectedCheckoutId, setSelectedCheckoutId] = useState('');
   const [changesTab, setChangesTab] = useState<'diff' | 'merge' | 'compare'>('diff');
   const [compareBranchA, setCompareBranchA] = useState('');
@@ -722,6 +725,11 @@ export function BoardShell({ client }: BoardShellProps) {
     }
     if (action === 'settings') {
       openProjectSettings(node.id);
+      return;
+    }
+    if (action === 'share') {
+      const request = shareRequestForNode(node);
+      if (request !== null) setShareRequest(request);
       return;
     }
     if (cloudRef !== null && action === 'cloudClean') {
@@ -1493,6 +1501,7 @@ export function BoardShell({ client }: BoardShellProps) {
           }}
         />
       )}
+      {shareRequest !== null && <ShareDialog request={shareRequest} onClose={() => setShareRequest(null)} />}
       {stoppedHistoryOpen && (
         <StoppedHistoryDialog
           store={projectStore}
@@ -1545,6 +1554,7 @@ export function BoardShell({ client }: BoardShellProps) {
           onSquadRemoved={closeRemovedSquad}
           projectStore={projectStore}
           onProjectNodeAction={runProjectNodeAction}
+          onShare={setShareRequest}
         />
       )}
       <WorkDialogHost
