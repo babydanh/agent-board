@@ -369,12 +369,18 @@ export function BoardShell({ client }: BoardShellProps) {
 
   useEffect(() => {
     if (!fleetAvailable) return undefined;
+    // A hidden tab asks for nothing: every snapshot makes the server peek cloud machines over `instabox exec`.
     const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
       void fleetStore.requestFleet();
     };
     refresh();
     const timer = window.setInterval(refresh, FLEET_REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [fleetAvailable]);
 
   useEffect(() => {

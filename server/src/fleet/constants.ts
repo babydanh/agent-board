@@ -50,7 +50,7 @@ export const FLEET_PEEK_DUMP_LINES = 60;
 /** A cloud session idle for less than this is at work, never waiting for an answer: it is not peeked. */
 export const FLEET_ASK_MIN_IDLE_S = 20;
 /** How long a machine's peek answer is reused before the next snapshot starts a fresh one (never awaited by the snapshot). */
-export const FLEET_ASK_CACHE_MS = 12_000;
+export const FLEET_ASK_CACHE_MS = 45_000;
 /** The peek runs on the machine and must not hang a snapshot's follow-up: seconds, passed to `instabox exec --timeout`. */
 export const FLEET_ASK_PEEK_TIMEOUT_S = 20;
 /** A cloud session's last prompts: how many the board shows, how long each one may be, and how long a machine's answer is reused. */
