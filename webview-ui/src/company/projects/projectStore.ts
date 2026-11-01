@@ -30,6 +30,9 @@ import type {
   ServerMessage,
 } from '../../../../core/src/messages.js';
 import { newRequestId as defaultRequestId } from '../companyMessages.js';
+import { PROJECT_COMMAND_TIMEOUT_MS } from '../constants.js';
+
+const TIMED_OUT_REASON = 'Máy chủ chưa trả lời. Việc có thể đã xong: tải lại cây để kiểm tra, hoặc thử lại.';
 
 export type ProjectServerMessage =
   | ProjectTreeSnapshotMessage
@@ -137,6 +140,15 @@ export function createProjectStore(options: ProjectStoreOptions): ProjectStore {
       const nextPending = { ...state.pending }; delete nextPending[request.requestId];
       const errors = { ...state.errors, [key]: error instanceof Error ? error.message : String(error) };
       commit({ ...state, pending: nextPending, errors });
+      return request.requestId;
+    }
+    // A write the server never answers would hang its waiter and hide the failure: report it as failed instead.
+    if (key.startsWith('command:')) {
+      setTimeout(() => {
+        if (latest.get(key) !== request.requestId || state.pending[request.requestId] === undefined) return;
+        const nextPending = { ...state.pending }; delete nextPending[request.requestId]; latest.delete(key);
+        commit({ ...state, pending: nextPending, errors: { ...state.errors, [key]: TIMED_OUT_REASON } });
+      }, PROJECT_COMMAND_TIMEOUT_MS);
     }
     return request.requestId;
   }

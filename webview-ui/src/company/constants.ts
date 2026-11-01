@@ -210,3 +210,6 @@ export const FLEET_ACTION_TIMEOUT_MS = {
 
 /** After this long a visible wait says it is slower than usual and offers to stop waiting. */
 export const BUSY_SLOW_AFTER_MS = 20_000;
+
+/** A project-tree write (create, delete, move, update, stop, wake) the server has not answered by now is reported as failed, so no wait hangs and no failure stays silent. */
+export const PROJECT_COMMAND_TIMEOUT_MS = 60_000;

@@ -55,6 +55,7 @@ import { ChangesPage } from '../projects/ChangesPage.js';
 import { contextOfNode } from '../projects/contextChip.js';
 import { LayeredSettingsDialog } from '../projects/LayeredSettingsDialog.js';
 import { NewSessionDialog } from '../projects/NewSessionDialog.js';
+import { projectBusyLabel } from '../projects/projectBusy.js';
 import { projectStore } from '../projects/projectClient.js';
 import {
   ancestorOf,
@@ -167,6 +168,7 @@ export interface BoardShellProps {
 
 export function BoardShell({ client }: BoardShellProps) {
   const projects = useProjectState(projectStore);
+  const projectBusy = projectBusyLabel(Object.values(projects.pending));
   const paneCheckout = useMemo(() => paneCheckouts(projects.nodes), [projects.nodes]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projectSettingsNode, setProjectSettingsNode] = useState<string | null>(null);
@@ -277,6 +279,16 @@ export function BoardShell({ client }: BoardShellProps) {
     cleanInFlight.current = false;
     if (fleet.actionError !== null) setSessionNotice(`Không xoá được phiên cloud: ${fleet.actionError}`);
   }, [fleet.action, fleet.actionError]);
+  // A delete or move the server refused (or never answered) used to fail without a word: say so once per failure.
+  const shownProjectFailure = useRef('');
+  useEffect(() => {
+    const failed = Object.entries(projects.errors).find(([key, reason]) => reason !== '' && (key.startsWith('command:delete:') || key.startsWith('command:move:')));
+    if (failed === undefined) return;
+    const signature = `${failed[0]}|${failed[1]}`;
+    if (shownProjectFailure.current === signature) return;
+    shownProjectFailure.current = signature;
+    setSessionNotice(`${failed[0].startsWith('command:delete:') ? 'Không xóa được' : 'Không di chuyển được'}: ${failed[1]}`);
+  }, [projects.errors]);
   // Once the machine no longer names a removed task (or the hide time is up), forget it for good, remembered sleeping row included.
   useEffect(() => {
     if (cleanedCloud.size === 0 || fleetMachines === undefined) return;
@@ -1159,6 +1171,11 @@ export function BoardShell({ client }: BoardShellProps) {
             since={fleet.action.startedAt}
             onCancel={fleetStore.cancelAction}
           />
+        </div>
+      )}
+      {projectBusy !== null && (
+        <div data-testid="project-busy" className="bg-warning/12 px-3 py-1.5">
+          <BusyNote text={projectBusy} />
         </div>
       )}
       {sessionNotice !== null && (
