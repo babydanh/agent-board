@@ -9,6 +9,7 @@ import { TERMINAL_WS_PREFIX } from '../../../../core/src/constants.js';
 import { encodeTerminalFrame, parseServerFrame } from '../../../../core/src/terminalFrames.js';
 import { TERMINAL_FONT_SIZE_PX, TERMINAL_SCROLLBACK_LINES, TERMINAL_THEME } from '../../constants.js';
 import { serverToken } from '../../transport/serverToken.js';
+import { shouldOpenHistory } from './cloudHistoryTrigger.js';
 import { registerCloudInput } from './cloudInput.js';
 import { exitScreen } from './cloudTerminalExit.js';
 
@@ -44,6 +45,10 @@ export function CloudTerminal({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState('Đang nối tới máy (máy ngủ thì mất 1–2 phút)…');
+  // The terminal effect runs once per socket; the wheel handler inside it must see the current props and cooldown.
+  const historyAsk = useRef({ onHistory, busy: historyBusy, lastOpenedAt: null as number | null });
+  historyAsk.current.onHistory = onHistory;
+  historyAsk.current.busy = historyBusy;
 
   useEffect(() => {
     const element = host.current;
@@ -121,8 +126,18 @@ export function CloudTerminal({
       });
     });
     observer.observe(element);
+    // Scrolling up past the first line the live view holds opens the machine's scrollback instead of stopping dead.
+    const onWheel = (event: WheelEvent): void => {
+      const ask = historyAsk.current;
+      const now = Date.now();
+      if (!ask.onHistory || !shouldOpenHistory({ deltaY: event.deltaY, viewportY: term.buffer.active.viewportY, busy: ask.busy, lastOpenedAt: ask.lastOpenedAt, now })) return;
+      ask.lastOpenedAt = now;
+      ask.onHistory();
+    };
+    element.addEventListener('wheel', onWheel, { passive: true });
 
     return () => {
+      element.removeEventListener('wheel', onWheel);
       cancelAnimationFrame(frame);
       observer.disconnect();
       unregister();
