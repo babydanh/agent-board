@@ -37,6 +37,20 @@ for w in "\${trees[@]}"; do
   case "$branch" in cloud/*) git -C "$root" branch -D "$branch" >/dev/null 2>&1 || true ;; esac
 done
 rm -f "$cwd/CLOUD-VIEC.md"; rmdir "$cwd" 2>/dev/null || true
+# Claude Code keeps a trust entry in ~/.claude.json and a transcript folder per project path; both outlive the worktree.
+# Only the exact paths of this task go (never a prefix: task "a" must not take task "a-b"). Best effort: the task itself is already removed.
+HOME_DIR="$HOME" WT="$cwd" node -e '
+const fs = require("fs"), wt = process.env.WT, home = process.env.HOME_DIR;
+const mine = [wt, wt + "/backend", wt + "/web", wt + "/app"];
+try {
+  const p = home + "/.claude.json", c = JSON.parse(fs.readFileSync(p, "utf8"));
+  const had = mine.filter((k) => c.projects && k in c.projects);
+  if (had.length) { for (const k of had) delete c.projects[k]; fs.writeFileSync(p + ".tmp", JSON.stringify(c, null, 2), { mode: 0o600 }); fs.renameSync(p + ".tmp", p); }
+} catch {}
+for (const k of mine) {
+  const name = k.replace(/[^A-Za-z0-9]/g, "-");
+  if (name) { try { fs.rmSync(home + "/.claude/projects/" + name, { recursive: true, force: true }); } catch {} }
+}' || true
 rm -f "$f"
 echo "OK $slug"
 `.replace(/\\\$/g, '$');
