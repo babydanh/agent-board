@@ -9,12 +9,12 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
   - Giao: `defaultBranch(path): string` exported from `fleet/agent.mjs` and reused by `fleet/local-agent.mjs`. Nhận: none.
   - Chủ file chung: 0.1 owns `fleet/agent.mjs` for P0; later tasks that touch it (1.x, 2.x) start after 0.1 is merged into this branch.
   - Phụ thuộc: none.
-- [ ] 0.2 Match repositories by GitHub identity in the board's overlap computation. Tiêu chí: `npm run test:server` exit 0 with TC-IDENT-01 (different folder names, same `github_repo` → one overlap) and TC-IDENT-02 (same folder name, different `github_repo` → none) and TC-IDENT-03 (no `github_repo` → folder-name fallback).
+- [x] 0.2 Match repositories by GitHub identity in the board's overlap computation. Tiêu chí: `npm run test:server` exit 0 with TC-IDENT-01 (different folder names, same `github_repo` → one overlap) and TC-IDENT-02 (same folder name, different `github_repo` → none) and TC-IDENT-03 (no `github_repo` → folder-name fallback).
   - Files: sửa `server/src/fleet/fleetSnapshot.ts` (`computeFleetOverlaps`, `hubRepoName`), test mới `server/__tests__/fleetIdentity.test.ts`.
   - Giao: `repoIdentity(repo: FleetHubRepo): string` (lower-case `github_repo` else folder name). Nhận: `FleetHubRepo.github_repo` already typed in `server/src/fleet/hubClient.ts:23`.
   - Chủ file chung: 0.2 owns `fleetSnapshot.ts` until 0.3 is done.
   - Phụ thuộc: none.
-- [ ] 0.3 Flag overlaps whose two sides have a different base. Tiêu chí: `npm run asyncapi:validate` exit 0; `npm run check-types` exit 0; `npm run test:server` exit 0 with TC-BASE-01 (equal `origin_main` → no mark) and TC-BASE-02 (different → `baseDiffers` true, level `file`); `npm run test:webview` exit 0 with TC-BASE-UI-01 (mark "khác nền" rendered).
+- [x] 0.3 Flag overlaps whose two sides have a different base. Tiêu chí: `npm run asyncapi:validate` exit 0; `npm run check-types` exit 0; `npm run test:server` exit 0 with TC-BASE-01 (equal `origin_main` → no mark) and TC-BASE-02 (different → `baseDiffers` true, level `file`); `npm run test:webview` exit 0 with TC-BASE-UI-01 (mark "khác nền" rendered).
   - Files: sửa `core/asyncapi.yaml` (`FleetOverlapWarning`: add `baseDiffers`), regenerate `core/src/messages.ts` with `npm run asyncapi:generate` (never edit by hand), `server/src/fleet/fleetSnapshot.ts`, `webview-ui/src/company/fleet/FleetView.tsx`, tests `server/__tests__/fleetIdentity.test.ts`, `webview-ui/test/fleetBaseMark.test.ts`.
   - Giao: `FleetOverlapWarning.baseDiffers?: boolean`. Nhận: `repoIdentity` from 0.2.
   - Chủ file chung: 0.3 owns `core/asyncapi.yaml` for P0; every later schema change (1.x, 2.x, 3.x) is a separate task that edits it one at a time, then regenerates.
