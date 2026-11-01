@@ -184,3 +184,41 @@ describe('fleet machine wake', () => {
     expect(sent).toHaveLength(1);
   });
 });
+
+describe('fleet lavish delete', () => {
+  it('asks the machine to delete the page, then refreshes the fleet so the row goes away', () => {
+    const sent: ClientMessage[] = [];
+    let n = 0;
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => `l${(n += 1)}` });
+
+    store.deleteLavish('danh', '75553638e6141283');
+
+    expect(sent).toEqual([{ type: 'fleetLavishDelete', requestId: 'l1', machine: 'danh', key: '75553638e6141283' }]);
+    expect(store.getSnapshot().action).toMatchObject({ kind: 'lavishDelete', machine: 'danh' });
+    store.accept({ type: 'fleetCommandResult', requestId: 'l1', ok: true, code: 'success' } as ServerMessage);
+    expect(store.getSnapshot().action).toBeNull();
+    expect(store.getSnapshot().actionError).toBeNull();
+    expect(sent[1]).toMatchObject({ type: 'fleetRequest' });
+  });
+
+  it('keeps the machine reason when it refused and asks for no refresh', () => {
+    const sent: ClientMessage[] = [];
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => 'l9' });
+
+    store.deleteLavish('danh', '75553638e6141283');
+    store.accept({ type: 'fleetCommandResult', requestId: 'l9', ok: false, code: 'failed', reason: 'Tu choi' } as ServerMessage);
+
+    expect(store.getSnapshot().actionError).toBe('Tu choi');
+    expect(sent).toHaveLength(1);
+  });
+
+  it('ignores a second delete while the first is still running', () => {
+    const sent: ClientMessage[] = [];
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => 'l3' });
+
+    store.deleteLavish('danh', '75553638e6141283');
+    store.deleteLavish('danh', '596fb6e7c69b625d');
+
+    expect(sent).toHaveLength(1);
+  });
+});

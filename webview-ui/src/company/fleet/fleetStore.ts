@@ -8,6 +8,7 @@ import type {
   FleetCommandResultMessage,
   FleetDiffMessage,
   FleetDiffRequestMessage,
+  FleetLavishDeleteMessage,
   FleetLavishOpenedMessage,
   FleetLavishOpenMessage,
   FleetMachineWakeMessage,
@@ -44,7 +45,7 @@ export interface FleetTerminal {
 /** One in-flight action (open a terminal / create a task); only the latest one is tracked. */
 export interface FleetAction {
   readonly requestId: string;
-  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'diff' | 'comment' | 'branch';
+  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'diff' | 'comment' | 'branch';
   readonly machine: string;
   readonly session: string;
 }
@@ -89,6 +90,8 @@ export interface FleetStore {
   /** Opens the session in a new browser tab once the board has forwarded a local port to the machine. */
   /** `tab` is opened by the click handler itself (a tab opened later, after the network round trip, is blocked as a popup). */
   openLavish: (machine: string, key: string, tab?: PendingTab | null) => void;
+  /** Deletes one Lavish page on the machine (ends its session, removes the file); the agent can write it again. */
+  deleteLavish: (machine: string, key: string) => void;
   requestDiff: (machine: string, path: string) => void;
   sendCloudComment: (comment: Omit<FleetCloudCommentSendMessage, 'type' | 'requestId'>) => void;
   runBranchAction: (action: Omit<FleetBranchActionMessage, 'type' | 'requestId'>) => void;
@@ -174,7 +177,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
   }
 
   function act(
-    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetDiffRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage,
+    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetLavishDeleteMessage | FleetDiffRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage,
     kind: FleetAction['kind'],
     session: string,
   ): void {
@@ -218,7 +221,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     } else if (message.type === 'fleetCommandResult') {
       if (action.kind === 'lavish') settleTab(null);
       commit({ ...state, action: null, actionError: message.ok ? null : message.reason ?? SEND_FAILED_REASON });
-      if ((action.kind === 'branch' || action.kind === 'wake') && message.ok) {
+      if ((action.kind === 'branch' || action.kind === 'wake' || action.kind === 'lavishDelete') && message.ok) {
         transmit({ type: 'fleetRequest', requestId: newRequestId() });
       }
     }
@@ -296,6 +299,9 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
       }
       pendingTab = tab ?? null;
       act({ type: 'fleetLavishOpen', requestId: newRequestId(), machine, key }, 'lavish', key);
+    },
+    deleteLavish: (machine, key) => {
+      act({ type: 'fleetLavishDelete', requestId: newRequestId(), machine, key }, 'lavishDelete', key);
     },
     requestDiff: (machine, path) => {
       act({ type: 'fleetDiffRequest', requestId: newRequestId(), machine, path }, 'diff', path);

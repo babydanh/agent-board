@@ -39,8 +39,23 @@ export function CloudDrawerPanel({ machine, session, onClose }: { machine: strin
               >
                 Mở Lavish
               </button>
+              <button
+                type="button"
+                disabled={fleet.action !== null}
+                className="company-btn company-btn-sm company-btn-ghost"
+                onClick={() => {
+                  if (window.confirm(`Xóa trang Lavish ${entry.file.replace(/^\/data\/home\/(wt\/)?/, '')}? Agent cloud có thể tạo lại khi cần.`)) {
+                    fleetStore.deleteLavish(machine, entry.key);
+                  }
+                }}
+              >
+                {fleet.action?.kind === 'lavishDelete' && fleet.action.session === entry.key ? 'Đang xóa…' : 'Xóa'}
+              </button>
             </li>
           ))}
+          {attached && fleet.actionError !== null && (
+            <li role="alert" className="text-xs text-warning">{fleet.actionError}</li>
+          )}
         </ul>
       )}
       {attached && (

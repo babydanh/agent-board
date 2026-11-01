@@ -293,6 +293,7 @@ components:
         - $ref: '#/components/schemas/FleetTaskCleanMessage'
         - $ref: '#/components/schemas/FleetMachineWakeMessage'
         - $ref: '#/components/schemas/FleetLavishOpenMessage'
+        - $ref: '#/components/schemas/FleetLavishDeleteMessage'
         - $ref: '#/components/schemas/FleetDiffRequestMessage'
         - $ref: '#/components/schemas/FleetCloudCommentSendMessage'
         - $ref: '#/components/schemas/FleetBranchActionMessage'
@@ -6592,6 +6593,24 @@ components:
       properties:
         type:
           const: fleetLavishOpen
+        requestId:
+          type: string
+          format: uuid
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        key:
+          type: string
+          pattern: '^[a-f0-9]{8,64}$'
+
+    FleetLavishDeleteMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, machine, key]
+      description: Delete one Lavish page on a cloud machine (ends its session, removes the file; privileged); answered by a fleetCommandResult.
+      properties:
+        type:
+          const: fleetLavishDelete
         requestId:
           type: string
           format: uuid

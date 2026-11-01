@@ -51,6 +51,7 @@ import {
   FLEET_TASK_SLUG,
   FLEET_TERMINAL_ID_BASE,
 } from './constants.js';
+import { LAVISH_DELETE_SCRIPT } from './lavishDelete.js';
 import { PANE_PEEK_SCRIPT, parsePanePeek } from './paneAsk.js';
 import { PANE_PROMPTS_SCRIPT, parsePanePrompts } from './panePrompts.js';
 import { TASK_CLEAN_SCRIPT } from './taskClean.js';
@@ -178,6 +179,19 @@ export class CloudControl {
     if (result.code !== 0 || !/^OK /m.test(result.stdout)) {
       const said = `${result.stdout}\n${result.stderr}`.trim().split('\n').filter(Boolean).pop();
       throw new CloudControlError('failed', said ?? `clean exit ${result.code}`);
+    }
+  }
+
+  /** Deletes one Lavish page (ends its session and removes the file); the agent that wrote it can write it again. */
+  async deleteLavish(machine: string, key: string): Promise<void> {
+    if (!FLEET_MACHINE_NAME.test(machine) || !FLEET_LAVISH_KEY.test(key)) {
+      throw new CloudControlError('bad_input', 'invalid lavish session');
+    }
+    const home = await this.#wake(machine);
+    const result = await this.deps.run(['exec', machine, '--timeout', '60', '--stdin', '--', 'bash', '-s', '--', key], home, LAVISH_DELETE_SCRIPT);
+    if (result.code !== 0 || !/^OK /m.test(result.stdout)) {
+      const said = `${result.stdout}\n${result.stderr}`.trim().split('\n').filter(Boolean).pop();
+      throw new CloudControlError('failed', said ?? `lavish delete exit ${result.code}`);
     }
   }
 

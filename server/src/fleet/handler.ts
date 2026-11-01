@@ -88,6 +88,7 @@ const FLEET_TYPES = new Set([
   'fleetTaskClean',
   'fleetMachineWake',
   'fleetLavishOpen',
+  'fleetLavishDelete',
   'fleetDiffRequest',
   'fleetCloudCommentSend',
   'fleetBranchAction',
@@ -127,6 +128,15 @@ export function handleFleetMessage(
     const machine = typeof msg.machine === 'string' ? msg.machine : '';
     cloudOf(context)
       .wakeMachine(machine)
+      .then(() => send({ type: 'fleetCommandResult', requestId, ok: true, code: 'success' }))
+      .catch((error: unknown) => send(failure(requestId, error)));
+    return true;
+  }
+  if (msg.type === 'fleetLavishDelete') {
+    const machine = typeof msg.machine === 'string' ? msg.machine : '';
+    const key = typeof msg.key === 'string' ? msg.key : '';
+    cloudOf(context)
+      .deleteLavish(machine, key)
       .then(() => send({ type: 'fleetCommandResult', requestId, ok: true, code: 'success' }))
       .catch((error: unknown) => send(failure(requestId, error)));
     return true;
