@@ -23,4 +23,6 @@ export interface ProjectServices {
   readonly comments?: ProjectCommentServices;
   readonly settings?: ProjectSettingsServices;
   readonly session?: ProjectSessionServices;
+  /** Keeps a prompt image on a cloud machine and returns its path there. */
+  readonly cloudImage?: (machine: string, fileName: string, dataBase64: string) => Promise<string>;
 }

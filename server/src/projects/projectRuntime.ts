@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { ProjectPrepareScript } from '../../../core/src/messages.js';
 import type { CompanyWorkspaceRegistry } from '../company/workspaceRegistry.js';
+import { sharedCloudControl } from '../fleet/handler.js';
 import type { HerdrLink } from '../herdr/herdrLink.js';
 import { ledgerPathKey } from '../ledger/ledgerPath.js';
 import type { LedgerService } from '../ledger/ledgerService.js';
@@ -101,6 +102,7 @@ export function createProjectRuntime(input: ProjectRuntimeInput): ProjectRuntime
     services: {
       settings,
       diff: createProjectDiffServices({ runProcess, ledger: ledger.projectTreeSource }),
+      cloudImage: (machine, fileName, dataBase64) => sharedCloudControl().uploadImage(machine, fileName, dataBase64),
       mergePreview: createProjectMergePreviewServices({ runProcess }),
       branchCompare: createProjectBranchCompareServices({ runProcess }),
       comments: createProjectCommentServices({

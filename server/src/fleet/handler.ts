@@ -292,6 +292,11 @@ function promptWatchOf(context: FleetCommandContext): ReturnType<typeof createPr
   return watch;
 }
 
+/** The board's one CloudControl, for server modules outside the fleet commands. */
+export function sharedCloudControl(): CloudControl {
+  return cloudOf({ ledger: null, privileged: true });
+}
+
 function cloudOf(context: FleetCommandContext): CloudControl {
   if (context.cloud) return context.cloud;
   if (defaultCloudControl === null) {

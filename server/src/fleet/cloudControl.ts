@@ -53,6 +53,7 @@ import {
   FLEET_TASK_SLUG,
   FLEET_TERMINAL_ID_BASE,
 } from './constants.js';
+import { IMAGE_UPLOAD_BASE64, IMAGE_UPLOAD_NAME, imageUploadScript } from './imageUpload.js';
 import { LAVISH_DELETE_SCRIPT } from './lavishDelete.js';
 import { PANE_PEEK_SCRIPT, parsePanePeek } from './paneAsk.js';
 import { PANE_PROMPTS_SCRIPT, parsePanePrompts } from './panePrompts.js';
@@ -183,6 +184,21 @@ export class CloudControl {
       const said = `${result.stdout}\n${result.stderr}`.trim().split('\n').filter(Boolean).pop();
       throw new CloudControlError('failed', said ?? `clean exit ${result.code}`);
     }
+  }
+
+  /** Keeps one prompt image on the machine and returns its path there, so an agent running on it can open the image. */
+  async uploadImage(machine: string, fileName: string, dataBase64: string): Promise<string> {
+    if (!FLEET_MACHINE_NAME.test(machine) || !IMAGE_UPLOAD_NAME.test(fileName) || !IMAGE_UPLOAD_BASE64.test(dataBase64)) {
+      throw new CloudControlError('bad_input', 'invalid image');
+    }
+    const home = await this.#wake(machine);
+    const result = await this.deps.run(['exec', machine, '--timeout', '60', '--stdin', '--', 'bash', '-s', '--', fileName], home, imageUploadScript(dataBase64));
+    const path = /^OK (\S+)$/m.exec(result.stdout)?.[1];
+    if (result.code !== 0 || path === undefined) {
+      const said = `${result.stdout}\n${result.stderr}`.trim().split('\n').filter(Boolean).pop();
+      throw new CloudControlError('failed', said ?? `image upload exit ${result.code}`);
+    }
+    return path;
   }
 
   /** Restarts the Claude of one tmux session on the same conversation (`claude --resume`); the machine refuses while Claude looks busy. */

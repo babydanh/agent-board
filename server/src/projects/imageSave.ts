@@ -30,6 +30,21 @@ export function defaultAttachmentDir(): string {
   return path.join(os.homedir(), LAYOUT_FILE_DIR, 'attachments');
 }
 
+/**
+ * Saves the image here and, when the prompt is going to a cloud machine, keeps it there too: the path answered is
+ * the one the agent can open, which on a machine is not a file of this computer.
+ */
+export async function savePromptImageFor(
+  request: Pick<ProjectImageSaveMessage, 'mediaType' | 'dataBase64' | 'machine'>,
+  cloudImage: ((machine: string, fileName: string, dataBase64: string) => Promise<string>) | undefined,
+  dir: string = defaultAttachmentDir(),
+): Promise<string> {
+  if (request.machine !== undefined && cloudImage === undefined) throw new LibraryUserError('Chưa nối được tới máy cloud để gửi ảnh.');
+  const local = await savePromptImage(request, dir);
+  if (request.machine === undefined || cloudImage === undefined) return local;
+  return cloudImage(request.machine, path.basename(local), request.dataBase64);
+}
+
 /** Writes the image and returns its absolute path. */
 export async function savePromptImage(
   request: Pick<ProjectImageSaveMessage, 'mediaType' | 'dataBase64'>,

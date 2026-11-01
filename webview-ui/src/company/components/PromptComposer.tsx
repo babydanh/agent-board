@@ -112,7 +112,7 @@ export interface PromptComposerProps {
   /** The Project tree's folders: new work can go to any of them, opened or not yet. */
   projectFolders: readonly { path: string; name?: string }[];
   /** The cloud session the drawer shows: a plain send types into it. Returns false when its terminal is not connected. */
-  cloudTarget?: { readonly label: string; readonly send: (text: string) => boolean };
+  cloudTarget?: { readonly label: string; readonly machine: string; readonly send: (text: string) => boolean };
 }
 
 /** One line's height, the padding and border around it, and the height the text needs. */
@@ -166,7 +166,8 @@ export function PromptComposer({ client, projectFolders, cloudTarget }: PromptCo
   const [squadRequest, setSquadRequest] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const images = usePromptImages(client, setNotice, draft.text);
+  // An image for a cloud session is kept on that machine, so its path in the text is one the agent can open.
+  const images = usePromptImages(client, setNotice, draft.text, cloudTarget?.machine);
   /** The height the user dragged the box to, or null when it has never been dragged. */
   const [savedHeight, setSavedHeight] = useState<number | null>(() =>
     readComposerHeight(composerStorage()),

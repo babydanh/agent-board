@@ -9359,6 +9359,10 @@ components:
         dataBase64:
           type: string
           maxLength: 13981016
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+          description: A cloud machine the prompt is going to. The image is also kept there and the saved message carries its path on that machine, since an agent on the machine cannot open a file on this computer.
 
     ProjectImageSavedMessage:
       type: object

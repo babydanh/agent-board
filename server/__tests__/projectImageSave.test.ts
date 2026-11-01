@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ProjectImageSaveMessage } from '../../core/src/messages.js';
-import { PROMPT_IMAGE_MAX_BYTES, savePromptImage } from '../src/projects/imageSave.js';
+import { PROMPT_IMAGE_MAX_BYTES, savePromptImage, savePromptImageFor } from '../src/projects/imageSave.js';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64');
 
@@ -38,5 +38,34 @@ describe('savePromptImage', () => {
     const big = Buffer.alloc(PROMPT_IMAGE_MAX_BYTES + 1).toString('base64');
     await expect(save({ mediaType: 'image/png', dataBase64: big })).rejects.toThrow();
     expect(await fs.readdir(dir)).toEqual([]);
+  });
+});
+
+describe('savePromptImageFor (TC-CLOUDIMG-02)', () => {
+  it('answers with the local path when no machine is named', async () => {
+    const dir = await tempDir();
+    const file = await savePromptImageFor({ mediaType: 'image/png', dataBase64: PNG }, undefined, dir);
+    expect(path.dirname(file)).toBe(dir);
+  });
+
+  it('keeps the image on the named machine and answers with its path there', async () => {
+    const dir = await tempDir();
+    const calls: { machine: string; fileName: string; dataBase64: string }[] = [];
+    const cloudImage = async (machine: string, fileName: string, dataBase64: string) => {
+      calls.push({ machine, fileName, dataBase64 });
+      return `/data/home/.board-images/${fileName}`;
+    };
+
+    const result = await savePromptImageFor({ mediaType: 'image/png', dataBase64: PNG, machine: 'danh1' }, cloudImage, dir);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ machine: 'danh1', dataBase64: PNG });
+    expect(calls[0]?.fileName).toMatch(/^\d{14}-[0-9a-f]{8}\.png$/);
+    expect(result).toBe(`/data/home/.board-images/${calls[0]?.fileName}`);
+  });
+
+  it('refuses a machine image when cloud upload is not wired, instead of answering a path the machine cannot open', async () => {
+    const dir = await tempDir();
+    await expect(savePromptImageFor({ mediaType: 'image/png', dataBase64: PNG, machine: 'danh1' }, undefined, dir)).rejects.toThrow();
   });
 });

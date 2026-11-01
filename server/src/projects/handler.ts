@@ -23,7 +23,7 @@ import type { AgentState } from '../types.js';
 import { getProjectBranchCompare } from './branchCompare.js';
 import { sendProjectComment } from './comments.js';
 import { getProjectDiff } from './diff.js';
-import { savePromptImage } from './imageSave.js';
+import { savePromptImageFor } from './imageSave.js';
 import { previewProjectMerge } from './mergePreview.js';
 import { startProjectSession } from './newSession.js';
 import { type ProjectNode, type ProjectState, ProjectStore } from './projectStore.js';
@@ -268,7 +268,7 @@ async function runProjectRequest(
         return;
       }
       case 'projectImageSave': {
-        const path = await savePromptImage(msg as unknown as ProjectImageSaveMessage);
+        const path = await savePromptImageFor(msg as unknown as ProjectImageSaveMessage, context.services?.cloudImage);
         send({ type: 'projectImageSaved', requestId, path });
         return;
       }

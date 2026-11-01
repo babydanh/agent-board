@@ -68,6 +68,7 @@ export function usePromptImages(
   client: CompanyClient,
   onNotice: (text: string) => void,
   draftText: string,
+  machine?: string,
 ): {
   attach: (files: readonly File[]) => void;
   saving: number;
@@ -120,6 +121,7 @@ export function usePromptImages(
             fileName: file.name || 'anh',
             mediaType: file.type as ProjectImageSaveMessage['mediaType'],
             dataBase64,
+            ...(machine === undefined ? {} : { machine }),
           });
           updateImages((current) => ({ ...current, pending: [...current.pending, { id, url: URL.createObjectURL(file) }] }));
         },

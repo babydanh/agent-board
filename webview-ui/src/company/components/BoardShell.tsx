@@ -232,7 +232,7 @@ export function BoardShell({ client }: BoardShellProps) {
     () => {
       const shown = drawerSubjectFor(state, opened);
       return shown?.kind === 'cloud' && attachedTerminal !== null && attachedTerminal.machine === shown.machine && attachedTerminal.session === shown.session
-        ? { label: `${shown.machine} · ${shown.session}`, send: (text: string) => sendCloudLine(attachedTerminal.terminalId, text) }
+        ? { label: `${shown.machine} · ${shown.session}`, machine: shown.machine, send: (text: string) => sendCloudLine(attachedTerminal.terminalId, text) }
         : undefined;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `state` changes on every board message; only the selection decides the drawer subject

@@ -3782,6 +3782,7 @@ export interface ProjectImageSaveMessage {
   fileName: string;
   mediaType: AnonymousSchema_2094;
   dataBase64: string;
+  machine?: string;
 }
 
 export type AnonymousSchema_2094 = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
@@ -3805,11 +3806,11 @@ export interface ProjectMergePreviewRequestMessage {
 export interface LibrarySnapshotRequest {
   type: 'librarySnapshotRequest';
   requestId: string;
-  section: AnonymousSchema_2108;
+  section: AnonymousSchema_2109;
   refresh?: boolean;
 }
 
-export type AnonymousSchema_2108 = 'accounts' | 'storage' | 'skills' | 'mcp' | 'claudeRoles';
+export type AnonymousSchema_2109 = 'accounts' | 'storage' | 'skills' | 'mcp' | 'claudeRoles';
 
 export interface LibrarySkillPreviewRequest {
   type: 'librarySkillPreviewRequest';
@@ -3838,18 +3839,18 @@ export interface LibrarySkillModeSet {
 export interface LibraryStorageSearchRequest {
   type: 'libraryStorageSearchRequest';
   requestId: string;
-  kind: AnonymousSchema_2128;
+  kind: AnonymousSchema_2129;
   query?: string;
   repo?: string;
-  agentType?: AnonymousSchema_2131;
+  agentType?: AnonymousSchema_2132;
   from?: string;
   to?: string;
   refresh?: boolean;
 }
 
-export type AnonymousSchema_2128 = 'workItems' | 'sessions' | 'openViking' | 'proofs';
+export type AnonymousSchema_2129 = 'workItems' | 'sessions' | 'openViking' | 'proofs';
 
-export type AnonymousSchema_2131 = 'main' | 'sub' | 'claude' | 'agy';
+export type AnonymousSchema_2132 = 'main' | 'sub' | 'claude' | 'agy';
 
 export interface LibraryWorkItemRestore {
   type: 'libraryWorkItemRestore';
@@ -3860,11 +3861,11 @@ export interface LibraryWorkItemRestore {
 export interface LibraryAccountLogin {
   type: 'libraryAccountLogin';
   requestId: string;
-  tool: AnonymousSchema_2140;
+  tool: AnonymousSchema_2141;
   provider?: string;
 }
 
-export type AnonymousSchema_2140 = 'claude' | 'agy' | 'omp';
+export type AnonymousSchema_2141 = 'claude' | 'agy' | 'omp';
 
 export interface LibraryMcpCheckRequest {
   type: 'libraryMcpCheckRequest';
@@ -3960,11 +3961,11 @@ export interface UsageLimitsRequestMessage {
 export interface UsageHistoryRequestMessage {
   type: 'usageHistoryRequest';
   requestId: string;
-  days: AnonymousSchema_2184;
+  days: AnonymousSchema_2185;
   force?: boolean;
 }
 
-export type AnonymousSchema_2184 = 1 | 7 | 30;
+export type AnonymousSchema_2185 = 1 | 7 | 30;
 
 export interface UsageStatsRequestMessage {
   type: 'usageStatsRequest';
