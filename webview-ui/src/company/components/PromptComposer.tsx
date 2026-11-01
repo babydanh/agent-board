@@ -801,7 +801,7 @@ export function PromptComposer({ client, projectFolders, cloudTarget }: PromptCo
       </div>
       <p className="mt-0.5 flex min-w-0 items-center gap-2 text-2xs text-text-muted">
         <span className="min-w-0 truncate" data-testid="prompt-target">
-          {cloudTarget !== undefined ? `Gửi vào cloud: ${cloudTarget.label}` : sleepingTarget === null ? sendTargetLabel(selectedSession, herdrTarget) : sleepingTargetLabel(sleepingTarget)}
+          {cloudTarget !== undefined ? `Gửi vào cloud: ${cloudTarget.label} · gõ ở đây (không trễ), Enter gửi cả đoạn` : sleepingTarget === null ? sendTargetLabel(selectedSession, herdrTarget) : sleepingTargetLabel(sleepingTarget)}
         </span>
         {pickerFolders.length > 0 && focus !== null && (
           <select
