@@ -50,5 +50,11 @@ export const FLEET_ASK_MIN_IDLE_S = 20;
 export const FLEET_ASK_CACHE_MS = 12_000;
 /** The peek runs on the machine and must not hang a snapshot's follow-up: seconds, passed to `instabox exec --timeout`. */
 export const FLEET_ASK_PEEK_TIMEOUT_S = 20;
+/** A cloud session's last prompts: how many the board shows, how long each one may be, and how long a machine's answer is reused. */
+export const FLEET_PROMPT_COUNT = 5;
+export const FLEET_PROMPT_MAX_CHARS = 300;
+export const FLEET_PROMPT_CACHE_MS = 60_000;
+/** Reading the transcripts runs on the machine: seconds, passed to `instabox exec --timeout`. */
+export const FLEET_PROMPT_PEEK_TIMEOUT_S = 25;
 /** The hub keeps at most this many task entries per machine (fleet/hub.mjs); a list this long may have been cut. */
 export const FLEET_HUB_TASK_LIMIT = 30;

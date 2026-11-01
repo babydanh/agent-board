@@ -43,6 +43,7 @@ import {
   FLEET_LAVISH_REMOTE_PORT,
   FLEET_MACHINE_NAME,
   FLEET_PROMPT_MAX,
+  FLEET_PROMPT_PEEK_TIMEOUT_S,
   FLEET_REPO_PATH,
   FLEET_SESSION_NAME,
   FLEET_TASK_ENGINES,
@@ -51,6 +52,7 @@ import {
   FLEET_TERMINAL_ID_BASE,
 } from './constants.js';
 import { PANE_PEEK_SCRIPT, parsePanePeek } from './paneAsk.js';
+import { PANE_PROMPTS_SCRIPT, parsePanePrompts } from './panePrompts.js';
 import { TASK_CLEAN_SCRIPT } from './taskClean.js';
 
 export type FleetTaskRepo = (typeof FLEET_TASK_REPOS)[number];
@@ -348,6 +350,32 @@ export class CloudControl {
       return new Set([...parsePanePeek(result.stdout)].filter((name) => wanted.has(name)));
     } catch {
       return new Set();
+    }
+  }
+
+  /**
+   * The last prompts of every tmux session of `machine`, by session name. Reads only: it never wakes the machine, and a
+   * failure rejects so the caller keeps its previous answer.
+   */
+  async peekPrompts(machine: string): Promise<Map<string, string[]>> {
+    if (!FLEET_MACHINE_NAME.test(machine)) return new Map();
+    const home = await this.#accountFor(machine);
+    const result = await this.deps.run(['exec', machine, '--timeout', String(FLEET_PROMPT_PEEK_TIMEOUT_S), '--stdin', '--', 'bash', '-s'], home, PANE_PROMPTS_SCRIPT);
+    if (result.code !== 0) throw new CloudControlError('failed', `prompt read exit ${result.code}`);
+    return parsePanePrompts(result.stdout);
+  }
+
+  /** Starts a paused or suspended machine on the user's request; fails only when InstaBox accepted neither `start` nor `wake`. */
+  async wakeMachine(machine: string): Promise<void> {
+    if (!FLEET_MACHINE_NAME.test(machine)) throw new CloudControlError('bad_input', 'invalid machine');
+    const home = await this.#accountFor(machine);
+    const answers = await Promise.all([
+      this.deps.run(['start', machine], home).catch(() => undefined),
+      this.deps.run(['wake', machine], home).catch(() => undefined),
+    ]);
+    if (answers.every((answer) => answer?.code !== 0)) {
+      const said = answers.map((answer) => `${answer?.stdout ?? ''}\n${answer?.stderr ?? ''}`).join('\n').trim().split('\n').filter(Boolean).pop();
+      throw new CloudControlError('failed', said ?? 'instabox start/wake failed');
     }
   }
 

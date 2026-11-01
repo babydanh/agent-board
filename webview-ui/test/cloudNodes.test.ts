@@ -239,3 +239,21 @@ describe('cloud rows, further review cases', () => {
     expect(rememberCloud(seen, [machine({ ...live, state: 'stale' })], {}, nodes, NOW)).toBe(seen);
   });
 });
+
+describe('cloudTreeNodes prompts', () => {
+  it('gives a session its last prompts, newest first, for the hover card and the row line', () => {
+    const live = machine({
+      tmuxSessions: [
+        { name: 'asked', attached: false, idleSeconds: 300, recentRequests: ['newest', 'older', 'oldest'] },
+        { name: 'quiet', attached: false, idleSeconds: 300 },
+      ],
+    });
+    const sessions = cloudTreeNodes({ ...base, machines: [live] }).filter((node) => node.kind === 'session');
+    const byName = (name: string) => sessions.find((node) => node.name === name);
+
+    expect(byName('asked')?.recentRequests).toEqual(['newest', 'older', 'oldest']);
+    expect(byName('asked')?.lastRequest).toBe('newest');
+    expect(byName('quiet')?.recentRequests).toBeUndefined();
+    expect(byName('quiet')?.lastRequest).toBeUndefined();
+  });
+});

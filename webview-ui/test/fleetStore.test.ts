@@ -146,3 +146,41 @@ describe('fleet task cleaning', () => {
     expect(store.getSnapshot().cleanedTask).toBeNull();
   });
 });
+
+describe('fleet machine wake', () => {
+  it('asks to start a paused machine, then refreshes the fleet once InstaBox accepted it', () => {
+    const sent: ClientMessage[] = [];
+    let n = 0;
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => `w${(n += 1)}` });
+
+    store.wakeMachine('danh1');
+
+    expect(sent).toEqual([{ type: 'fleetMachineWake', requestId: 'w1', machine: 'danh1' }]);
+    expect(store.getSnapshot().action).toMatchObject({ kind: 'wake', machine: 'danh1' });
+    store.accept({ type: 'fleetCommandResult', requestId: 'w1', ok: true, code: 'success' } as ServerMessage);
+    expect(store.getSnapshot().action).toBeNull();
+    expect(store.getSnapshot().actionError).toBeNull();
+    expect(sent[1]).toMatchObject({ type: 'fleetRequest' });
+  });
+
+  it('keeps the reason when the machine could not be started and asks for no refresh', () => {
+    const sent: ClientMessage[] = [];
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => 'w9' });
+
+    store.wakeMachine('danh1');
+    store.accept({ type: 'fleetCommandResult', requestId: 'w9', ok: false, code: 'failed', reason: 'no such machine' } as ServerMessage);
+
+    expect(store.getSnapshot().actionError).toBe('no such machine');
+    expect(sent).toHaveLength(1);
+  });
+
+  it('ignores a second wake while the first is still running', () => {
+    const sent: ClientMessage[] = [];
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => 'w3' });
+
+    store.wakeMachine('danh1');
+    store.wakeMachine('danh1');
+
+    expect(sent).toHaveLength(1);
+  });
+});

@@ -24,6 +24,7 @@ import {
 import { collectFleetBranchPullRequests } from './fleetBranchStatus.js';
 import { buildFleetSnapshot } from './fleetSnapshot.js';
 import { createFleetHubClient, type FleetHubClient, type FleetHubResponse, FleetUnavailableError } from './hubClient.js';
+import { createPromptWatch } from './promptWatch.js';
 import { readExpectedSkillVersion } from './skillVersion.js';
 
 const FALLBACK_REQUEST_ID = '00000000-0000-4000-8000-000000000000';
@@ -35,6 +36,7 @@ const defaultBranchAnalysis = createFleetBranchAnalysisService();
 let defaultCloudControl: CloudControl | null = null;
 // Which cloud sessions wait on a menu: one watch per cloud control, peeking in the background through it.
 const askWatches = new WeakMap<CloudControl, ReturnType<typeof createAskWatch>>();
+const promptWatches = new WeakMap<CloudControl, ReturnType<typeof createPromptWatch>>();
 
 export interface FleetCommandContext {
   readonly fleet?: FleetHubClient;
@@ -84,6 +86,7 @@ const FLEET_TYPES = new Set([
   'fleetTerminalOpen',
   'fleetTaskCreate',
   'fleetTaskClean',
+  'fleetMachineWake',
   'fleetLavishOpen',
   'fleetDiffRequest',
   'fleetCloudCommentSend',
@@ -117,6 +120,14 @@ export function handleFleetMessage(
     cloudOf(context)
       .cleanTask(machine, session)
       .then(() => send({ type: 'fleetTaskCleaned', requestId, machine, session }))
+      .catch((error: unknown) => send(failure(requestId, error)));
+    return true;
+  }
+  if (msg.type === 'fleetMachineWake') {
+    const machine = typeof msg.machine === 'string' ? msg.machine : '';
+    cloudOf(context)
+      .wakeMachine(machine)
+      .then(() => send({ type: 'fleetCommandResult', requestId, ok: true, code: 'success' }))
       .catch((error: unknown) => send(failure(requestId, error)));
     return true;
   }
@@ -182,7 +193,7 @@ async function snapshotWithPullRequests(
   localGuard: GitGuardReport | null,
   context: FleetCommandContext,
 ): Promise<FleetSnapshotMessage> {
-  const snapshot = askWatchOf(context).annotate(buildFleetSnapshot(requestId, response, localView, localGuard, readExpectedSkillVersion()));
+  const snapshot = promptWatchOf(context).annotate(askWatchOf(context).annotate(buildFleetSnapshot(requestId, response, localView, localGuard, readExpectedSkillVersion())));
   try {
     const status = await collectFleetBranchPullRequests(localView, response, {
       git: context.git ?? defaultPullRequestGit,
@@ -237,6 +248,16 @@ function askWatchOf(context: FleetCommandContext): ReturnType<typeof createAskWa
   if (watch === undefined) {
     watch = createAskWatch((machine, sessions) => cloud.peekAsking(machine, sessions));
     askWatches.set(cloud, watch);
+  }
+  return watch;
+}
+
+function promptWatchOf(context: FleetCommandContext): ReturnType<typeof createPromptWatch> {
+  const cloud = cloudOf(context);
+  let watch = promptWatches.get(cloud);
+  if (watch === undefined) {
+    watch = createPromptWatch((machine) => cloud.peekPrompts(machine));
+    promptWatches.set(cloud, watch);
   }
   return watch;
 }

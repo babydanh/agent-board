@@ -28,7 +28,7 @@ import { readDrawerTabPrefs, writeDrawerTabPrefs } from '../drawerTabPrefs.js';
 import { settleCleaned } from '../fleet/cloudClean.js';
 import { cloudFolderKey, type CloudFolders, readCloudFolders, writeCloudFolders } from '../fleet/cloudFolders.js';
 import { sendCloudLine } from '../fleet/cloudInput.js';
-import { cloudNodeId, cloudTreeNodes, parseCloudNodeId, readCloudSeen, rememberCloud, writeCloudSeen } from '../fleet/cloudNodes.js';
+import { cloudNodeId, cloudTreeNodes, parseCloudNodeId, pausedMachineNotice, readCloudSeen, rememberCloud, writeCloudSeen } from '../fleet/cloudNodes.js';
 import { pendingCloudRow } from '../fleet/cloudRows.js';
 import { randomSuffix, slugFromPrompt } from '../fleet/cloudTaskPick.js';
 import { fleetStore } from '../fleet/fleetClient.js';
@@ -236,6 +236,24 @@ export function BoardShell({ client }: BoardShellProps) {
   );
   // Why a session clicked in the tree opened nothing: it runs outside herdr, so there is no pane.
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  // The paused cloud machine a clicked sleeping row sits on: its notice offers a button that starts it.
+  const [pausedMachine, setPausedMachine] = useState<string | null>(null);
+  const wakeInFlight = useRef<string | null>(null);
+  useEffect(() => {
+    if (fleet.action?.kind === 'wake') {
+      wakeInFlight.current = fleet.action.machine;
+      return;
+    }
+    const machine = wakeInFlight.current;
+    if (machine === null || fleet.action !== null) return;
+    wakeInFlight.current = null;
+    setPausedMachine(null);
+    setSessionNotice(
+      fleet.actionError !== null
+        ? `Không bật được máy ${machine}: ${fleet.actionError}`
+        : `Đã gửi lệnh bật máy ${machine}. Máy báo lại sau khoảng 1–3 phút, rồi bấm lại phiên.`,
+    );
+  }, [fleet.action, fleet.actionError]);
   // A removed cloud task: hide it, close its drawer, and read the fleet again.
   const handledCleaned = useRef<typeof fleet.cleanedTask>(null);
   useEffect(() => {
@@ -635,7 +653,8 @@ export function BoardShell({ client }: BoardShellProps) {
     }
     // Its changes are read from the machine: a paused one cannot answer, so say so instead of opening an empty page.
     if (fleetMachines?.some((entry) => entry.agentId === machine && entry.state !== 'online') === true) {
-      setSessionNotice(`Máy ${machine} đang tạm dừng (hub không nhận tin từ máy hơn 10 phút). Mở máy lại ở InstaBox rồi bấm lại.`);
+      setPausedMachine(machine);
+      setSessionNotice(pausedMachineNotice(machine));
       return;
     }
     openCloudChanges(node, machine);
@@ -1134,6 +1153,16 @@ export function BoardShell({ client }: BoardShellProps) {
       {sessionNotice !== null && (
         <p role="status" data-testid="session-open-notice" className="flex items-center gap-2 bg-warning/12 px-3 py-1.5 text-2xs text-warning">
           <span className="min-w-0 flex-1">{sessionNotice}</span>
+          {pausedMachine !== null && sessionNotice === pausedMachineNotice(pausedMachine) && (
+            <button
+              type="button"
+              className="company-btn company-btn-sm company-btn-primary"
+              disabled={fleet.action !== null}
+              onClick={() => fleetStore.wakeMachine(pausedMachine)}
+            >
+              {fleet.action?.kind === 'wake' ? 'Đang bật máy…' : `Bật máy ${pausedMachine}`}
+            </button>
+          )}
           <button type="button" aria-label="Đóng thông báo" onClick={() => setSessionNotice(null)}>×</button>
         </p>
       )}

@@ -291,6 +291,7 @@ components:
         - $ref: '#/components/schemas/FleetTerminalOpenMessage'
         - $ref: '#/components/schemas/FleetTaskCreateMessage'
         - $ref: '#/components/schemas/FleetTaskCleanMessage'
+        - $ref: '#/components/schemas/FleetMachineWakeMessage'
         - $ref: '#/components/schemas/FleetLavishOpenMessage'
         - $ref: '#/components/schemas/FleetDiffRequestMessage'
         - $ref: '#/components/schemas/FleetCloudCommentSendMessage'
@@ -6492,6 +6493,21 @@ components:
         session:
           type: string
 
+    FleetMachineWakeMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, machine]
+      description: Start a cloud machine InstaBox has paused or suspended (privileged); answered by a fleetCommandResult.
+      properties:
+        type:
+          const: fleetMachineWake
+        requestId:
+          type: string
+          format: uuid
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+
     FleetTaskCleanMessage:
       type: object
       additionalProperties: false
@@ -6548,6 +6564,13 @@ components:
         asking:
           type: boolean
           description: The pane shows a menu waiting for the user's choice (a Claude permission prompt or question), read from the bottom of the tmux pane. Absent when it does not, or was not read.
+        recentRequests:
+          type: array
+          maxItems: 5
+          description: The user's last prompts to this Claude session, newest first, read from its transcript on the machine. Absent when none were read.
+          items:
+            type: string
+            maxLength: 300
 
     FleetLavishSession:
       type: object
