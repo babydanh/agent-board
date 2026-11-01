@@ -170,6 +170,7 @@ components:
         - $ref: '#/components/schemas/FleetTaskCleanedMessage'
         - $ref: '#/components/schemas/FleetLavishOpenedMessage'
         - $ref: '#/components/schemas/FleetDiffMessage'
+        - $ref: '#/components/schemas/FleetHistoryMessage'
         # Project tree (privileged; project, checkout and session data)
         - $ref: '#/components/schemas/ProjectTreeSnapshotMessage'
         - $ref: '#/components/schemas/ProjectDiffMessage'
@@ -295,6 +296,7 @@ components:
         - $ref: '#/components/schemas/FleetLavishOpenMessage'
         - $ref: '#/components/schemas/FleetLavishDeleteMessage'
         - $ref: '#/components/schemas/FleetDiffRequestMessage'
+        - $ref: '#/components/schemas/FleetHistoryRequestMessage'
         - $ref: '#/components/schemas/FleetCloudCommentSendMessage'
         - $ref: '#/components/schemas/FleetBranchActionMessage'
         # Project tree (privileged; tree CRUD, diffs, comments, settings and sessions)
@@ -6653,6 +6655,24 @@ components:
           type: string
           maxLength: 300
 
+    FleetHistoryRequestMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, machine, session]
+      description: Read the tmux scrollback of one cloud session once, so the board can scroll it locally (privileged, read-only).
+      properties:
+        type:
+          const: fleetHistoryRequest
+        requestId:
+          type: string
+          format: uuid
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        session:
+          type: string
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+
     FleetCloudCommentSendMessage:
       type: object
       additionalProperties: false
@@ -6727,6 +6747,26 @@ components:
         machine:
           type: string
         path:
+          type: string
+        text:
+          type: string
+        truncated:
+          type: boolean
+
+    FleetHistoryMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, machine, session, text, truncated]
+      description: The tmux scrollback of one session (escape sequences kept); when truncated the oldest lines were cut.
+      properties:
+        type:
+          const: fleetHistory
+        requestId:
+          type: string
+          format: uuid
+        machine:
+          type: string
+        session:
           type: string
         text:
           type: string

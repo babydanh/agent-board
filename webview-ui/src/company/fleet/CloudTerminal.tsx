@@ -22,7 +22,22 @@ const TERMINAL_FONT_FAMILY = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Men
  * only while this component is mounted: closing it detaches (tmux and the agent
  * keep running on the machine).
  */
-export function CloudTerminal({ terminalId, label, onClose, fill = false }: { terminalId: number; label: string; onClose: () => void; fill?: boolean }) {
+export function CloudTerminal({
+  terminalId,
+  label,
+  onClose,
+  fill = false,
+  onHistory,
+  historyBusy = false,
+}: {
+  terminalId: number;
+  label: string;
+  onClose: () => void;
+  fill?: boolean;
+  /** Opens the locally scrolled scrollback (see CloudHistory); no button when omitted. */
+  onHistory?: () => void;
+  historyBusy?: boolean;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState('Đang nối tới máy (máy ngủ thì mất 1–2 phút)…');
 
@@ -121,6 +136,11 @@ export function CloudTerminal({ terminalId, label, onClose, fill = false }: { te
         <span className="flex-1 truncate text-xs text-text-muted">
           {status || 'Thoát khung không tắt agent. Thoát tmux: Ctrl+B rồi D.'}
         </span>
+        {onHistory && (
+          <button type="button" disabled={historyBusy} className="company-btn company-btn-sm company-btn-ghost" onClick={onHistory} title="Tải lịch sử một lần rồi cuộn trên máy bạn, không trễ">
+            {historyBusy ? 'Đang tải…' : 'Lịch sử'}
+          </button>
+        )}
         <button type="button" className="company-btn company-btn-sm company-btn-ghost" onClick={onClose}>
           Đóng
         </button>

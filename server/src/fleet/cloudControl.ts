@@ -38,6 +38,8 @@ import {
   FLEET_DIFF_NEW_FILES,
   FLEET_FORWARD_IDLE_MS,
   FLEET_FORWARD_READY_MS,
+  FLEET_HISTORY_LINES,
+  FLEET_HISTORY_MAX_BYTES,
   FLEET_INSTABOX_TIMEOUT_MS,
   FLEET_LAVISH_KEY,
   FLEET_LAVISH_REMOTE_PORT,
@@ -257,6 +259,28 @@ export class CloudControl {
     if (result.code !== 0) throw new CloudControlError('failed', result.stdout.trim().split('\n').pop() ?? 'git failed');
     const truncated = Buffer.byteLength(result.stdout) > FLEET_DIFF_MAX_BYTES;
     return { text: truncated ? result.stdout.slice(0, FLEET_DIFF_MAX_BYTES) : result.stdout, truncated };
+  }
+
+  /**
+   * The tmux scrollback of one session, read once so the board can scroll it locally (every step of a live
+   * scroll costs a full network round trip). Wrapped lines are joined (`-J`) so the board re-wraps to its own width.
+   */
+  async readHistory(machine: string, session: string): Promise<{ text: string; truncated: boolean }> {
+    if (!FLEET_MACHINE_NAME.test(machine) || !FLEET_SESSION_NAME.test(session)) {
+      throw new CloudControlError('bad_input', 'invalid session');
+    }
+    const home = await this.#wake(machine);
+    // tmux's own status is checked before the pipe: `tmux ... | tail` would report tail's success for a missing session.
+    const script =
+      `out=$(tmux capture-pane -p -e -J -S -${FLEET_HISTORY_LINES} -t '${session}' 2>&1) || { echo "$out"; exit 1; }; ` +
+      `printf '%s\\n' "$out" | tail -c ${FLEET_HISTORY_MAX_BYTES + 1}`;
+    const result = await this.deps.run(['exec', machine, '--timeout', '60', '--', script], home);
+    if (result.code !== 0) throw new CloudControlError('failed', result.stdout.trim().split('\n').pop() ?? 'history failed');
+    const bytes = Buffer.from(result.stdout);
+    if (bytes.length <= FLEET_HISTORY_MAX_BYTES) return { text: result.stdout, truncated: false };
+    // Keep the newest bytes and start on a whole line: the cut may fall inside a line or an escape sequence.
+    const kept = bytes.subarray(bytes.length - FLEET_HISTORY_MAX_BYTES).toString();
+    return { text: kept.slice(kept.indexOf('\n') + 1), truncated: true };
   }
 
   /** Build a GitRunner pinned to one reported cloud account; engine calls run with argv-only git commands. */

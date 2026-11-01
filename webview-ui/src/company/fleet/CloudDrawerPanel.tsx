@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { CloudHistory } from './CloudHistory.js';
 import { lavishOfSession, openPendingTab } from './cloudLavish.js';
 import { CloudTerminal } from './CloudTerminal.js';
 import { fleetStore } from './fleetClient.js';
@@ -15,6 +16,7 @@ export function CloudDrawerPanel({ machine, session, onClose }: { machine: strin
   const terminal = fleet.terminal;
   const attached = terminal !== null && terminal.machine === machine && terminal.session === session;
   const connecting = fleet.action?.kind === 'terminal';
+  const history = fleet.history !== null && fleet.history.machine === machine && fleet.history.session === session ? fleet.history : null;
   const lavish = lavishOfSession(fleet.snapshot?.machines.find((entry) => entry.agentId === machine)?.lavishSessions, session);
 
   // Opens once per session shown; a failure is reported below with a retry instead of looping.
@@ -59,7 +61,18 @@ export function CloudDrawerPanel({ machine, session, onClose }: { machine: strin
         </ul>
       )}
       {attached && (
-        <CloudTerminal key={terminal.terminalId} terminalId={terminal.terminalId} label={`${machine} · ${session}`} onClose={onClose} fill />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <CloudTerminal
+            key={terminal.terminalId}
+            terminalId={terminal.terminalId}
+            label={`${machine} · ${session}`}
+            onClose={onClose}
+            fill
+            onHistory={() => fleetStore.requestHistory(machine, session)}
+            historyBusy={fleet.action?.kind === 'history'}
+          />
+          {history !== null && <CloudHistory text={history.text} truncated={history.truncated} label={`${machine} · ${session}`} onClose={fleetStore.closeHistory} />}
+        </div>
       )}
       {!attached && (connecting || fleet.actionError === null) && (
         <p role="status" className="text-sm text-text-muted">

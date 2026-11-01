@@ -38,6 +38,9 @@ export const FLEET_DIFF_MAX_BYTES = 300_000;
 /** Untracked (new) files shown with their content in a diff: at most this many, each cut at this many bytes. */
 export const FLEET_DIFF_NEW_FILES = 20;
 export const FLEET_DIFF_NEW_FILE_BYTES = 20_000;
+/** The board's own scrollback for one cloud tmux session: how many lines are read, and the most bytes sent (the newest are kept). */
+export const FLEET_HISTORY_LINES = 50_000;
+export const FLEET_HISTORY_MAX_BYTES = 1_500_000;
 export const FLEET_REASON_NOT_REPORTED = 'Máy này chưa báo repository đó cho hub (đợi 30 giây rồi thử lại).';
 /** A tmux pane peek: one marker line per session in the dump, and how many bottom lines of each pane are read. */
 export const FLEET_PEEK_MARKER = '@@BOARD-PEEK@@';

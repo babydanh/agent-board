@@ -90,6 +90,7 @@ const FLEET_TYPES = new Set([
   'fleetLavishOpen',
   'fleetLavishDelete',
   'fleetDiffRequest',
+  'fleetHistoryRequest',
   'fleetCloudCommentSend',
   'fleetBranchAction',
 ]);
@@ -152,6 +153,15 @@ export function handleFleetMessage(
   }
   if (msg.type === 'fleetDiffRequest') {
     readDiff(msg, requestId, send, context);
+    return true;
+  }
+  if (msg.type === 'fleetHistoryRequest') {
+    const machine = typeof msg.machine === 'string' ? msg.machine : '';
+    const session = typeof msg.session === 'string' ? msg.session : '';
+    cloudOf(context)
+      .readHistory(machine, session)
+      .then((history) => send({ type: 'fleetHistory', requestId, machine, session, text: history.text, truncated: history.truncated }))
+      .catch((error: unknown) => send(failure(requestId, error)));
     return true;
   }
   if (msg.type === 'fleetCloudCommentSend') {

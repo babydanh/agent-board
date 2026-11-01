@@ -250,3 +250,30 @@ describe('fleet reconnect', () => {
     expect(store.getSnapshot().action).toBeNull();
   });
 });
+
+describe('fleet history', () => {
+  it('asks once for a session scrollback, keeps the answer until closed', () => {
+    const sent: ClientMessage[] = [];
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => 'h1' });
+
+    store.requestHistory('danh', 'heloo-74pr');
+
+    expect(sent).toEqual([{ type: 'fleetHistoryRequest', requestId: 'h1', machine: 'danh', session: 'heloo-74pr' }]);
+    expect(store.getSnapshot().action).toMatchObject({ kind: 'history', session: 'heloo-74pr' });
+    store.accept({ type: 'fleetHistory', requestId: 'h1', machine: 'danh', session: 'heloo-74pr', text: 'a\nb\n', truncated: false } as ServerMessage);
+    expect(store.getSnapshot().action).toBeNull();
+    expect(store.getSnapshot().history).toEqual({ machine: 'danh', session: 'heloo-74pr', text: 'a\nb\n', truncated: false });
+    store.closeHistory();
+    expect(store.getSnapshot().history).toBeNull();
+  });
+
+  it('keeps the reason when the machine could not read it', () => {
+    const store = createFleetStore({ send: () => undefined, newRequestId: () => 'h2' });
+
+    store.requestHistory('danh', 'nope');
+    store.accept({ type: 'fleetCommandResult', requestId: 'h2', ok: false, code: 'failed', reason: 'no session' } as ServerMessage);
+
+    expect(store.getSnapshot().history).toBeNull();
+    expect(store.getSnapshot().actionError).toBe('no session');
+  });
+});

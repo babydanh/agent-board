@@ -8,6 +8,8 @@ import type {
   FleetCommandResultMessage,
   FleetDiffMessage,
   FleetDiffRequestMessage,
+  FleetHistoryMessage,
+  FleetHistoryRequestMessage,
   FleetLavishDeleteMessage,
   FleetLavishOpenedMessage,
   FleetLavishOpenMessage,
@@ -33,7 +35,8 @@ export type FleetServerMessage =
   | FleetTaskCreatedMessage
   | FleetTaskCleanedMessage
   | FleetLavishOpenedMessage
-  | FleetDiffMessage;
+  | FleetDiffMessage
+  | FleetHistoryMessage;
 
 /** A cloud tmux session the board is showing in its terminal panel. */
 export interface FleetTerminal {
@@ -45,7 +48,7 @@ export interface FleetTerminal {
 /** One in-flight action (open a terminal / create a task); only the latest one is tracked. */
 export interface FleetAction {
   readonly requestId: string;
-  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'diff' | 'comment' | 'branch';
+  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'diff' | 'history' | 'comment' | 'branch';
   readonly machine: string;
   readonly session: string;
 }
@@ -67,6 +70,8 @@ export interface FleetState {
   readonly cleanedTask: { readonly machine: string; readonly session: string } | null;
   /** The last diff the user asked for, shown until closed. */
   readonly diff: Omit<FleetDiffMessage, 'type' | 'requestId'> | null;
+  /** One session's scrollback fetched once, scrolled locally (no network round trip per step) until closed. */
+  readonly history: Omit<FleetHistoryMessage, 'type' | 'requestId'> | null;
 }
 
 export interface FleetStoreOptions {
@@ -93,6 +98,8 @@ export interface FleetStore {
   /** Deletes one Lavish page on the machine (ends its session, removes the file); the agent can write it again. */
   deleteLavish: (machine: string, key: string) => void;
   requestDiff: (machine: string, path: string) => void;
+  requestHistory: (machine: string, session: string) => void;
+  closeHistory: () => void;
   sendCloudComment: (comment: Omit<FleetCloudCommentSendMessage, 'type' | 'requestId'>) => void;
   runBranchAction: (action: Omit<FleetBranchActionMessage, 'type' | 'requestId'>) => void;
   sendLocalCiFailureComment: (checkout: string, receivingSessionId: string, pr: FleetPullRequest) => void;
@@ -126,6 +133,7 @@ export function createInitialFleetState(): FleetState {
     createdTask: null,
     cleanedTask: null,
     diff: null,
+    history: null,
   };
 }
 
@@ -137,7 +145,8 @@ export function isFleetServerMessage(message: ServerMessage): message is FleetSe
     message.type === 'fleetTaskCreated' ||
     message.type === 'fleetTaskCleaned' ||
     message.type === 'fleetLavishOpened' ||
-    message.type === 'fleetDiff'
+    message.type === 'fleetDiff' ||
+    message.type === 'fleetHistory'
   );
 }
 
@@ -177,7 +186,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
   }
 
   function act(
-    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetLavishDeleteMessage | FleetDiffRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage,
+    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetLavishDeleteMessage | FleetDiffRequestMessage | FleetHistoryRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage,
     kind: FleetAction['kind'],
     session: string,
   ): void {
@@ -214,6 +223,8 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
       settleTab(message.url);
     } else if (message.type === 'fleetDiff') {
       commit({ ...state, action: null, diff: { machine: message.machine, path: message.path, text: message.text, truncated: message.truncated } });
+    } else if (message.type === 'fleetHistory') {
+      commit({ ...state, action: null, history: { machine: message.machine, session: message.session, text: message.text, truncated: message.truncated } });
     } else if (message.type === 'fleetTaskCreated') {
       commit({ ...state, action: null, createdTask: { machine: message.machine, session: message.session } });
     } else if (message.type === 'fleetTaskCleaned') {
@@ -307,6 +318,10 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     deleteLavish: (machine, key) => {
       act({ type: 'fleetLavishDelete', requestId: newRequestId(), machine, key }, 'lavishDelete', key);
     },
+    requestHistory: (machine, session) => {
+      act({ type: 'fleetHistoryRequest', requestId: newRequestId(), machine, session }, 'history', session);
+    },
+    closeHistory: () => commit({ ...state, history: null }),
     requestDiff: (machine, path) => {
       act({ type: 'fleetDiffRequest', requestId: newRequestId(), machine, path }, 'diff', path);
     },
