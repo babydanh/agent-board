@@ -39,6 +39,7 @@ import type { ProjectModuleDeps, ProjectServices } from './services.js';
 import { processAlive, stopLedgerSession } from './sessionStop.js';
 import { wakeEndedSession } from './sessionWake.js';
 import { clearProjectSettings, getProjectSettings, refreshProjectSettings, setProjectSettings } from './settingsLayers.js';
+import { listStoppedSessions } from './stoppedSessions.js';
 
 const FALLBACK_REQUEST_ID = '00000000-0000-4000-8000-000000000000';
 const REQUEST_TYPES: Record<string, true> = {
@@ -55,6 +56,7 @@ const REQUEST_TYPES: Record<string, true> = {
   projectSessionStart: true,
   projectSessionStop: true,
   projectSessionWake: true,
+  projectStoppedRequest: true,
   projectImageSave: true,
   projectMergePreviewRequest: true,
   projectBranchCompareRequest: true,
@@ -102,6 +104,8 @@ export function handleProjectMessage(
       send(mergePreviewFailure(msg, requestId, reason));
     } else if (msg.type === 'projectBranchCompareRequest') {
       send(branchCompareFailure(msg, requestId, reason));
+    } else if (msg.type === 'projectStoppedRequest') {
+      send(stoppedFailure(requestId, reason));
     } else {
       send(commandResult(requestId, commandFor(msg.type), false, reason));
     }
@@ -268,6 +272,20 @@ async function runProjectRequest(
         await sendTreeSnapshot(requestId, send, store, context);
         return;
       }
+      case 'projectStoppedRequest': {
+        const options = treeOptions(context);
+        const page = await listStoppedSessions(
+          // A killed session never wrote its end: its dead process is what says it ended.
+          { ...options, isAlive: processAlive },
+          {
+            ...(typeof msg.cursor === 'string' ? { cursor: msg.cursor } : {}),
+            ...(typeof msg.limit === 'number' ? { limit: msg.limit } : {}),
+            ...(typeof msg.query === 'string' ? { query: msg.query } : {}),
+          },
+        );
+        send({ type: 'projectStoppedPage', requestId, ok: true, ...page });
+        return;
+      }
       case 'projectImageSave': {
         const path = await savePromptImageFor(msg as unknown as ProjectImageSaveMessage, context.services?.cloudImage);
         send({ type: 'projectImageSaved', requestId, path });
@@ -296,6 +314,8 @@ async function runProjectRequest(
       send(commandResult(requestId, 'create', false, reason));
     } else if (msg.type === 'projectSessionStart') {
       send({ type: 'projectSessionStartResult', requestId, ok: false, reason });
+    } else if (msg.type === 'projectStoppedRequest') {
+      send(stoppedFailure(requestId, reason));
     } else if (msg.type === 'projectSettingsRequest') {
       send({
         type: 'projectSettings', requestId,
@@ -440,9 +460,14 @@ function safeReason(type: string): string {
     case 'projectSettingsClear': return 'Không thể cập nhật cài đặt Project.';
     case 'projectSessionStop': return 'Không thể tắt phiên.';
     case 'projectSessionWake': return 'Không mở lại được phiên.';
+    case 'projectStoppedRequest': return 'Không tải được danh sách phiên đã tắt.';
     case 'projectImageSave': return 'Không lưu được ảnh.';
     default: return 'Không thể thực hiện yêu cầu Project.';
   }
+}
+
+function stoppedFailure(requestId: string, reason: string): ServerMessage {
+  return { type: 'projectStoppedPage', requestId, ok: false, reason, items: [], total: 0 };
 }
 
 function mergePreviewFailure(

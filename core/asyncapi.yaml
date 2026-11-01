@@ -173,6 +173,7 @@ components:
         - $ref: '#/components/schemas/FleetHistoryMessage'
         # Project tree (privileged; project, checkout and session data)
         - $ref: '#/components/schemas/ProjectTreeSnapshotMessage'
+        - $ref: '#/components/schemas/ProjectStoppedPageMessage'
         - $ref: '#/components/schemas/ProjectDiffMessage'
         - $ref: '#/components/schemas/ProjectSettingsMessage'
         - $ref: '#/components/schemas/ProjectCommandResultMessage'
@@ -315,6 +316,7 @@ components:
         - $ref: '#/components/schemas/ProjectSessionStartMessage'
         - $ref: '#/components/schemas/ProjectSessionStopMessage'
         - $ref: '#/components/schemas/ProjectSessionWakeMessage'
+        - $ref: '#/components/schemas/ProjectStoppedRequestMessage'
         - $ref: '#/components/schemas/ProjectImageSaveMessage'
         - $ref: '#/components/schemas/ProjectBranchCompareRequestMessage'
         - $ref: '#/components/schemas/ProjectMergePreviewRequestMessage'
@@ -9315,6 +9317,36 @@ components:
           minLength: 1
           maxLength: 256
 
+    ProjectStoppedRequestMessage:
+      type: object
+      additionalProperties: false
+      description: >-
+        One page of the sessions that stopped (exited, killed, or put to sleep in herdr), newest
+        first, from the whole activity ledger: not only the last day the Project tree carries.
+        `cursor` is a previous page's `nextCursor`; the answer is a projectStoppedPage.
+      required: [type, requestId]
+      properties:
+        type:
+          const: projectStoppedRequest
+        requestId:
+          type: string
+          format: uuid
+        cursor:
+          type: string
+          minLength: 1
+          maxLength: 256
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Sessions per page; the server uses 30 when absent.
+        query:
+          type: string
+          maxLength: 200
+          description: >-
+            Text looked for, case-insensitive, in the folder path, agent name, session id,
+            transcript file name and herdr pane title.
+
     ProjectSessionWakeMessage:
       type: object
       additionalProperties: false
@@ -9426,6 +9458,37 @@ components:
           description: >-
             True for the quick folders-and-sessions snapshot sent before the git scan ends:
             repos, worktrees and files are not known yet. The full snapshot follows.
+
+    ProjectStoppedPageMessage:
+      type: object
+      additionalProperties: false
+      description: >-
+        The answer to projectStoppedRequest: session nodes in the `ended` or sleeping state, each
+        with `stoppedAt`, newest first. `nextCursor` is absent on the last page.
+      required: [type, requestId, ok, items, total]
+      properties:
+        type:
+          const: projectStoppedPage
+        requestId:
+          type: string
+          format: uuid
+        ok:
+          type: boolean
+        reason:
+          type: string
+          description: Vietnamese reason when `ok` is false.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectTreeNode'
+        nextCursor:
+          type: string
+          minLength: 1
+          maxLength: 256
+        total:
+          type: integer
+          minimum: 0
+          description: How many sessions match the query over all pages.
 
     ProjectDiffMessage:
       type: object

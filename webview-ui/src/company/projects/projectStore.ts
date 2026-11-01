@@ -25,6 +25,8 @@ import type {
   ProjectSettingsMessage,
   ProjectSettingsRequestMessage,
   ProjectSettingsSetMessage,
+  ProjectStoppedPageMessage,
+  ProjectStoppedRequestMessage,
   ProjectTreeNode,
   ProjectTreeRequestMessage,
   ProjectTreeSnapshotMessage,
@@ -44,6 +46,7 @@ export type ProjectServerMessage =
   | ProjectSessionProgressMessage
   | ProjectImageSavedMessage
   | ProjectBranchCompareMessage
+  | ProjectStoppedPageMessage
   | ProjectMergePreviewResultMessage;
 type ProjectRequest =
   | ProjectTreeRequestMessage
@@ -58,6 +61,7 @@ type ProjectRequest =
   | ProjectSessionStartMessage
   | ProjectSessionStopMessage
   | ProjectSessionWakeMessage
+  | ProjectStoppedRequestMessage
   | ProjectImageSaveMessage
   | ProjectCommentMessage
   | ProjectMergePreviewRequestMessage
@@ -72,7 +76,7 @@ export interface ProjectState {
   diff: ProjectDiffMessage | null;
   settings: ProjectSettingsMessage | null;
   pending: Readonly<Record<string, ProjectRequest>>;
-  results: Readonly<Record<string, ProjectCommandResultMessage | ProjectSessionStartResultMessage | ProjectBranchCompareMessage | ProjectMergePreviewResultMessage | ProjectImageSavedMessage>>;
+  results: Readonly<Record<string, ProjectCommandResultMessage | ProjectSessionStartResultMessage | ProjectBranchCompareMessage | ProjectMergePreviewResultMessage | ProjectImageSavedMessage | ProjectStoppedPageMessage>>;
   errors: Readonly<Record<string, string>>;
   /** The stages each pending session start has entered, in order; cleared when its result arrives. */
   progress: Readonly<Record<string, readonly ProjectSessionProgressMessage['stage'][]>>;
@@ -103,6 +107,8 @@ export interface ProjectStore {
   stopSession: (sessionId: string) => string;
   /** Reopens a session that exited lately in a new herdr tab resuming its transcript, the prompt typed into it. */
   wakeSession: (sessionId: string, prompt: string) => string;
+  /** Asks for one page of every session that stopped, newest first; `cursor` is the previous page's `nextCursor`. */
+  requestStopped: (input: Omit<ProjectStoppedRequestMessage, 'type' | 'requestId'>) => string;
   /** Saves an image from the prompt box; its result is `projectImageSaved` with the file's path. */
   saveImage: (input: Omit<ProjectImageSaveMessage, 'type' | 'requestId'>) => string;
   sendComment: (input: Omit<ProjectCommentMessage, 'type' | 'requestId'>) => string;
@@ -123,7 +129,7 @@ function withoutSubtree(nodes: readonly ProjectTreeNode[], rootId: string): read
 }
 
 export function isProjectServerMessage(message: ServerMessage): message is ProjectServerMessage {
-  return message.type === 'projectTreeSnapshot' || message.type === 'projectDiff' || message.type === 'projectSettings' || message.type === 'projectCommandResult' || message.type === 'projectSessionStartResult' || message.type === 'projectSessionProgress' || message.type === 'projectMergePreviewResult' || message.type === 'projectBranchCompare' || message.type === 'projectImageSaved';
+  return message.type === 'projectTreeSnapshot' || message.type === 'projectDiff' || message.type === 'projectSettings' || message.type === 'projectCommandResult' || message.type === 'projectSessionStartResult' || message.type === 'projectSessionProgress' || message.type === 'projectMergePreviewResult' || message.type === 'projectBranchCompare' || message.type === 'projectImageSaved' || message.type === 'projectStoppedPage';
 }
 
 export function createProjectStore(options: ProjectStoreOptions): ProjectStore {
@@ -212,6 +218,7 @@ export function createProjectStore(options: ProjectStoreOptions): ProjectStore {
       case 'projectSessionStart': return 'sessionStart';
       case 'projectSessionStop': return `command:stop:${request.sessionId}`;
       case 'projectSessionWake': return `command:wake:${request.sessionId}`;
+      case 'projectStoppedRequest': return `command:stopped:${request.query ?? ''}:${request.cursor ?? ''}`;
       case 'projectImageSave': return `image:${request.requestId}`;
       case 'projectComment': return `comment:${request.requestId}`;
       case 'projectMergePreviewRequest': return `merge:${request.repo}:${request.branchA}:${request.branchB}`;
@@ -235,6 +242,7 @@ export function createProjectStore(options: ProjectStoreOptions): ProjectStore {
       const req = { type: 'projectSessionWake' as const, requestId: requestId(), sessionId, ...(prompt === '' ? {} : { prompt }) };
       return transmit(req, latestKey(req));
     },
+    requestStopped: (input) => { const req = { ...input, type: 'projectStoppedRequest' as const, requestId: requestId() }; return transmit(req, latestKey(req)); },
     saveImage: (input) => { const req = { ...input, type: 'projectImageSave' as const, requestId: requestId() }; return transmit(req, latestKey(req)); },
     sendComment: (input) => { const req = { ...input, type: 'projectComment' as const, requestId: requestId() }; return transmit(req, latestKey(req)); },
     previewMerge: (input) => { const req = { ...input, type: 'projectMergePreviewRequest' as const, requestId: requestId() }; return transmit(req, latestKey(req)); },
@@ -286,6 +294,31 @@ function waitForProjectCommand(
 export async function waitForProjectCreate(store: ProjectStore, requestId: string): Promise<ProjectCreateOutcome> {
   const outcome = await waitForProjectCommand(store, requestId, 'command:create');
   return 'result' in outcome ? { nodeId: outcome.result.nodeId } : outcome;
+}
+
+/** How a stopped-sessions page ended: the page, why the server refused, or replaced by a newer identical ask. */
+export type ProjectStoppedOutcome = { readonly page: ProjectStoppedPageMessage } | { readonly refusal: string } | { readonly superseded: true };
+
+/** Asks for one page of stopped sessions and waits for its answer (or its failure to send or time out). */
+export function fetchStoppedPage(store: ProjectStore, input: Omit<ProjectStoppedRequestMessage, 'type' | 'requestId'>): Promise<ProjectStoppedOutcome> {
+  const requestId = store.requestStopped(input);
+  const key = `command:stopped:${input.query ?? ''}:${input.cursor ?? ''}`;
+  return new Promise((resolve) => {
+    const settle = (): void => {
+      const state = store.getSnapshot();
+      if (state.pending[requestId] !== undefined) return;
+      unsubscribe();
+      const result = state.results[requestId];
+      if (result?.type === 'projectStoppedPage' && result.ok) {
+        resolve({ page: result });
+        return;
+      }
+      const reason = (result?.type === 'projectStoppedPage' ? result.reason : undefined) || state.errors[key];
+      resolve(reason ? { refusal: reason } : { superseded: true });
+    };
+    const unsubscribe = store.subscribe(settle);
+    settle();
+  });
 }
 
 export async function waitForProjectWake(store: ProjectStore, requestId: string, sessionId: string): Promise<ProjectWakeOutcome> {

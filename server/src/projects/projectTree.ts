@@ -149,7 +149,7 @@ function agentKindForLedger(row: SessionRow): ProjectAgentKind {
 }
 
 /** A ledger session row with its latest intent, the board session behind it, its spawner, its herdr pane and its last edited checkout, when known. */
-type TitledSessionRow = SessionRow & {
+export type TitledSessionRow = SessionRow & {
   readonly intent?: string;
   readonly boardSessionId?: string;
   readonly parentSessionId?: string;
@@ -186,23 +186,28 @@ function fileStem(file: string): string {
 }
 
 /**
- * Live rows, plus the main sessions (no subagents) that ended within a day: the newest
- * {@link ENDED_SESSIONS_MAX}, leaving out one a herdr pane already lists as sleeping. A Claude
- * session's transcript is named after its id, so a pane's file name stands for an id too.
+ * The main sessions (no subagents) that ended, with their exit time, leaving out one a herdr pane
+ * already lists as sleeping. A Claude session's transcript is named after its id, so a pane's file
+ * name stands for an id too.
  */
-export function withRecentlyEnded(rows: readonly SessionRow[], panes: readonly HerdrProjectSession[], now: number): SessionRow[] {
+export function endedMainRows<T extends SessionRow>(rows: readonly T[], panes: readonly HerdrProjectSession[]): { row: T; at: number }[] {
   const paneFiles = new Set(panes.flatMap((pane) => (pane.sessionFile === undefined ? [] : [fileStem(pane.sessionFile)])));
   const paneIds = new Set(panes.flatMap((pane) => [
     ...(pane.sessionId === undefined ? [] : [pane.sessionId.toLowerCase()]),
     ...(pane.sessionFile === undefined ? [] : [path.posix.basename(fileStem(pane.sessionFile))]),
   ]));
-  const ended = rows
-    .flatMap((row) => {
-      const at = parseLedgerTime(row.endedAt);
-      if (at === null || now - at > ENDED_SESSION_WINDOW_MS || agentKindForLedger(row) === 'sub') return [];
-      if (paneIds.has(row.sessionId.toLowerCase()) || (row.sessionFile && paneFiles.has(fileStem(row.sessionFile)))) return [];
-      return [{ row, at }];
-    })
+  return rows.flatMap((row) => {
+    const at = parseLedgerTime(row.endedAt);
+    if (at === null || agentKindForLedger(row) === 'sub') return [];
+    if (paneIds.has(row.sessionId.toLowerCase()) || (row.sessionFile && paneFiles.has(fileStem(row.sessionFile)))) return [];
+    return [{ row, at }];
+  });
+}
+
+/** Live rows, plus the newest {@link ENDED_SESSIONS_MAX} main sessions that ended within a day (see {@link endedMainRows}). */
+export function withRecentlyEnded(rows: readonly SessionRow[], panes: readonly HerdrProjectSession[], now: number): SessionRow[] {
+  const ended = endedMainRows(rows, panes)
+    .filter(({ at }) => now - at <= ENDED_SESSION_WINDOW_MS)
     .sort((a, b) => b.at - a.at)
     .slice(0, ENDED_SESSIONS_MAX);
   const kept = new Set(ended.map((entry) => entry.row));
@@ -243,7 +248,7 @@ export function parentSessions(rows: readonly SessionRow[]): Map<string, string>
 }
 
 /** Adds each session's latest non-empty intent and last edited checkout (last few hours), its board session id and its spawner. */
-function annotateLedgerRows(
+export function annotateLedgerRows(
   rows: readonly SessionRow[],
   ledger: LedgerSource,
   boardSessionFor: ((nativeSessionId: string) => string | undefined) | undefined,
@@ -344,20 +349,7 @@ function sessionsForCheckout(
   const sessions: ProjectSessionSnapshot[] = [];
   for (const row of ledgerRows) {
     if (row.cwd === null || !owns(row.cwd)) continue;
-    sessions.push({
-      engine: engineForLedger(row),
-      agentKind: agentKindForLedger(row),
-      id: row.sessionId,
-      status: ledgerStatus(row),
-      title: titleForLedger(row),
-      cwd: row.cwd,
-      ...(row.boardSessionId === undefined ? {} : { boardSessionId: row.boardSessionId }),
-      ...(row.parentSessionId === undefined ? {} : { parentSessionId: row.parentSessionId }),
-      ...(row.herdrPaneId === undefined ? {} : { herdrPaneId: row.herdrPaneId }),
-      ...(row.editCheckouts === undefined ? {} : { editCheckouts: row.editCheckouts }),
-      ...factFields(row),
-      ...endedAtIso(row),
-    });
+    sessions.push(ledgerSessionSnapshot(row, row.cwd));
   }
   for (const agent of agents) {
     if (!owns(agent.projectDir)) continue;
@@ -372,14 +364,37 @@ function sessionsForCheckout(
   }
   for (const session of herdrSessions) {
     if (!owns(session.cwd)) continue;
-    sessions.push({
-      engine: 'herdr', agentKind: 'herdr', id: session.id, cwd: session.cwd, status: session.status, title: session.title,
-      ...factFields(session),
-      ...(session.sleptAt === undefined ? {} : { stoppedAt: session.sleptAt }),
-      ...transcriptIdOf(session),
-    });
+    sessions.push(herdrSessionSnapshot(session));
   }
   return sessions;
+}
+
+/** A ledger row as a tree session; `cwd` is the row's own folder, already known not to be null. */
+export function ledgerSessionSnapshot(row: TitledSessionRow, cwd: string): ProjectSessionSnapshot {
+  return {
+    engine: engineForLedger(row),
+    agentKind: agentKindForLedger(row),
+    id: row.sessionId,
+    status: ledgerStatus(row),
+    title: titleForLedger(row),
+    cwd,
+    ...(row.boardSessionId === undefined ? {} : { boardSessionId: row.boardSessionId }),
+    ...(row.parentSessionId === undefined ? {} : { parentSessionId: row.parentSessionId }),
+    ...(row.herdrPaneId === undefined ? {} : { herdrPaneId: row.herdrPaneId }),
+    ...(row.editCheckouts === undefined ? {} : { editCheckouts: row.editCheckouts }),
+    ...factFields(row),
+    ...endedAtIso(row),
+  };
+}
+
+/** A herdr pane as a tree session. */
+export function herdrSessionSnapshot(session: HerdrProjectSession): ProjectSessionSnapshot {
+  return {
+    engine: 'herdr', agentKind: 'herdr', id: session.id, cwd: session.cwd, status: session.status, title: session.title,
+    ...factFields(session),
+    ...(session.sleptAt === undefined ? {} : { stoppedAt: session.sleptAt }),
+    ...transcriptIdOf(session),
+  };
 }
 
 const NUMSTAT_OPTIONS: GitRunOptions = {
@@ -768,7 +783,7 @@ async function appendNodes(
   }
 }
 
-function pushSessions(output: ProjectTreeNode[], parentId: string, sessions: readonly ProjectSessionSnapshot[]): void {
+export function pushSessions(output: ProjectTreeNode[], parentId: string, sessions: readonly ProjectSessionSnapshot[]): void {
   for (const session of sessions) {
     output.push({
       id: `${session.agentKind}:${session.id}`,
@@ -811,7 +826,7 @@ export function withDeadProcessesEnded(rows: readonly SessionRow[], isAlive: ((p
  * cut-off turn. A Claude row the ledger gives no file is read by its session id; an unreadable
  * transcript gives none.
  */
-async function withProgress(
+export async function withProgress(
   rows: readonly TitledSessionRow[],
   read: ProjectTreeOptions['sessionFacts'],
 ): Promise<readonly TitledSessionRow[]> {
@@ -846,7 +861,7 @@ function transcriptIdOf(pane: HerdrProjectSession): { transcriptId?: string } {
  * Panes no live ledger session joined (a sleeping one above all) with what their transcript says
  * they were doing, so a sleeping session can be found again by its task.
  */
-async function withPaneFacts(
+export async function withPaneFacts(
   panes: readonly HerdrProjectSession[],
   read: ProjectTreeOptions['sessionFacts'],
 ): Promise<readonly HerdrProjectSession[]> {

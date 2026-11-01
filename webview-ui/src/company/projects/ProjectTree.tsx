@@ -107,6 +107,8 @@ export interface ProjectTreeProps {
   onOpenSession: (session: ProjectTreeNode, where: { readonly folderPath?: string }) => void;
   /** Opens a "Vừa ngủ / tắt" session's details: its prompts, its last answer, and its wake. */
   onOpenStopped: (session: ProjectTreeNode) => void;
+  /** Opens the full list of every session that stopped, paged from the server; no button when absent. */
+  onOpenStoppedHistory?: () => void;
   onMenu: (request: AgentMenuRequest) => void;
   /** The session the detail drawer shows; its row is highlighted and scrolled into view. */
   selection?: TreeSelection;
@@ -216,7 +218,7 @@ export function ProjectTree(props: ProjectTreeProps) {
           </button>
         )}
       </div>
-      <RecentlyStopped nodes={nodes} onOpenStopped={props.onOpenStopped} onMenu={props.onMenu} cloud={props.cloud !== undefined} />
+      <RecentlyStopped nodes={nodes} onOpenStopped={props.onOpenStopped} {...(props.onOpenStoppedHistory === undefined ? {} : { onOpenHistory: props.onOpenStoppedHistory })} onMenu={props.onMenu} cloud={props.cloud !== undefined} />
       <div className="min-h-0 overflow-y-auto">
         {visible.map((branch) => (
           <ProjectTreeRow key={branch.node.id} branch={branch} depth={0} collapsed={collapsed} onToggleCollapse={toggleCollapse} onMove={moveNode} {...props} />
@@ -233,7 +235,7 @@ export function ProjectTree(props: ProjectTreeProps) {
 }
 
 /** "bị ngắt" (its last turn was cut off) or "dở" (it stopped with todo tasks left); nothing for a finished or working session. */
-function UnfinishedMark({ node, count = false }: { node: ProjectTreeNode; count?: boolean }) {
+export function UnfinishedMark({ node, count = false }: { node: ProjectTreeNode; count?: boolean }) {
   if (!isUnfinishedNode(node)) return null;
   if (node.interrupted !== undefined) {
     return <span className="shrink-0 text-status-error" title={`Bị ngắt: ${node.interrupted}`}>bị ngắt</span>;
@@ -243,21 +245,35 @@ function UnfinishedMark({ node, count = false }: { node: ProjectTreeNode; count?
 }
 
 /** The sessions put to sleep or exited last, newest first: which one, how long ago, and whether it left work undone. */
-function RecentlyStopped({ nodes, onOpenStopped, onMenu, cloud }: Pick<ProjectTreeProps, 'nodes' | 'onOpenStopped' | 'onMenu'> & { cloud: boolean }) {
+function RecentlyStopped({ nodes, onOpenStopped, onOpenHistory, onMenu, cloud }: Pick<ProjectTreeProps, 'nodes' | 'onOpenStopped' | 'onMenu'> & { cloud: boolean; onOpenHistory?: () => void }) {
   const now = useNow();
   const [open, setOpen] = useState(true);
   const recent = useMemo(() => recentlyStoppedSessions(nodes, RECENT_STOPPED_MAX), [nodes]);
-  if (recent.length === 0) return null;
+  // With the full list one click away the heading stays even when nothing stopped lately: older sessions are in there.
+  if (recent.length === 0 && onOpenHistory === undefined) return null;
   return (
     <section aria-label="Vừa ngủ / tắt" className="flex flex-col">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="touch-target flex items-center gap-1 rounded px-2 text-left text-xs font-semibold text-text-muted hover:bg-hover"
-      >
-        <span aria-hidden="true">{open ? '▾' : '▸'}</span>Vừa ngủ / tắt
-      </button>
+      <div className="flex items-center">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="touch-target flex min-w-0 flex-1 items-center gap-1 rounded px-2 text-left text-xs font-semibold text-text-muted hover:bg-hover"
+        >
+          <span aria-hidden="true">{open ? '▾' : '▸'}</span>Vừa ngủ / tắt
+        </button>
+        {onOpenHistory !== undefined && (
+          <button
+            type="button"
+            data-testid="stopped-history-open"
+            onClick={onOpenHistory}
+            title="Xem mọi phiên đã tắt hoặc ngủ, từ mới đến cũ"
+            className="touch-target shrink-0 rounded px-2 text-2xs text-accent hover:bg-hover"
+          >
+            Xem tất cả
+          </button>
+        )}
+      </div>
       {open && recent.map((node) => <RecentStoppedRow key={node.id} node={node} menuContext={projectMenuContext(nodes, node, cloud)} folder={ancestorOf(nodes, node, 'folder')?.name} now={now} onOpenStopped={onOpenStopped} onMenu={onMenu} />)}
     </section>
   );

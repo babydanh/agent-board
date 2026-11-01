@@ -68,6 +68,7 @@ import {
 } from '../projects/projectNodeTargets.js';
 import { useProjectState, waitForProjectCreate } from '../projects/projectStore.js';
 import { isEndedNode } from '../projects/projectTreeView.js';
+import { StoppedHistoryDialog } from '../projects/StoppedHistoryDialog.js';
 import { StoppedSessionDialog } from '../projects/StoppedSessionDialog.js';
 import { COMPANY_ROLES, roleProfile } from '../roleProfiles.js';
 import { startScrollFades } from '../scrollFades.js';
@@ -180,6 +181,8 @@ export function BoardShell({ client }: BoardShellProps) {
   const [cloudSeen, setCloudSeen] = useState(readCloudSeen);
   /** The "Vừa ngủ / tắt" session whose details are open, to be woken from there. */
   const [stoppedNode, setStoppedNode] = useState<ProjectTreeNode | null>(null);
+  /** The full stopped-sessions list is open. */
+  const [stoppedHistoryOpen, setStoppedHistoryOpen] = useState(false);
   const [selectedCheckoutId, setSelectedCheckoutId] = useState('');
   const [changesTab, setChangesTab] = useState<'diff' | 'merge' | 'compare'>('diff');
   const [compareBranchA, setCompareBranchA] = useState('');
@@ -1291,6 +1294,7 @@ export function BoardShell({ client }: BoardShellProps) {
                   if (cloud === null) setStoppedNode(node);
                   else openCloudNode(node, cloud.machine, cloud.session);
                 },
+                onOpenStoppedHistory: () => setStoppedHistoryOpen(true),
                 onMenu: openMenu,
                 store: projectStore,
                 selection: { sessionId: opened?.kind === 'cloud' ? cloudNodeId(opened.machine, opened.session) : selectedSessionId, paneId: selectedPaneId },
@@ -1487,6 +1491,13 @@ export function BoardShell({ client }: BoardShellProps) {
             // An omp chat lives in its folder's board, so the board switches there to show it.
             if (folderPath !== undefined) selectWorkspaceSession(folderPath, sessionId);
           }}
+        />
+      )}
+      {stoppedHistoryOpen && (
+        <StoppedHistoryDialog
+          store={projectStore}
+          onOpen={(node) => setStoppedNode(node)}
+          onClose={() => setStoppedHistoryOpen(false)}
         />
       )}
       {stoppedNode !== null && (
