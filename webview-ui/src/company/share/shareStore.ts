@@ -10,6 +10,12 @@ import { newRequestId as defaultRequestId } from '../companyMessages.js';
 
 const SEND_FAILED_REASON = 'Không gửi được yêu cầu share. Kiểm tra kết nối rồi thử lại.';
 
+/** What a link shows: a cloud terminal, an omp session the board runs, or a herdr pane. */
+export type ShareTargetRef =
+  | { readonly kind: 'cloud'; readonly terminalId: number }
+  | { readonly kind: 'company'; readonly sessionId: string }
+  | { readonly kind: 'herdr'; readonly paneId: string };
+
 export interface ShareState {
   readonly shares: readonly ShareInfo[];
   /** A command is waiting for its answer. */
@@ -23,7 +29,7 @@ export interface ShareStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): ShareState;
   accept(message: ServerMessage): void;
-  create(input: { terminalId: number; label: string; ttlMinutes?: number }): void;
+  create(input: { target: ShareTargetRef; label: string; ttlMinutes?: number }): void;
   revoke(token: string): void;
   refresh(): void;
   /** Forgets the last created link and error, keeping the list. */
@@ -72,11 +78,11 @@ export function createShareStore(options: {
         createdToken: message.ok && message.token !== undefined ? message.token : null,
       });
     },
-    create: ({ terminalId, label, ttlMinutes }) =>
+    create: ({ target, label, ttlMinutes }) =>
       transmit((requestId) => ({
         type: 'shareCreate',
         requestId,
-        terminalId,
+        ...target,
         label,
         ...(ttlMinutes === undefined ? {} : { ttlMinutes }),
       })),

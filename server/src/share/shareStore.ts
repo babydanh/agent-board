@@ -1,7 +1,7 @@
 /**
  * shareStore: the live "view only" links to terminals, in memory.
  *
- * A link is a random token naming one terminal; whoever holds it may watch that terminal and
+ * A link is a random token naming one target (a terminal, a session or a pane); whoever holds it may watch that terminal and
  * nothing else. It lives only here: a board restart ends every link, which is the safe way to
  * fail. A link ends on its own at its deadline or when its owner revokes it, and listeners
  * (the viewer sockets) hear about either at once.
@@ -17,9 +17,15 @@ export const SHARE_MAX_ACTIVE = 20;
 /** 18 random bytes: 144 bits, 24 url-safe characters. */
 const TOKEN_BYTES = 18;
 
+/** What a link shows: a cloud terminal, a board-run omp session, or a herdr pane. */
+export type ShareTarget =
+  | { readonly kind: 'cloud'; readonly terminalId: number }
+  | { readonly kind: 'company'; readonly sessionId: string }
+  | { readonly kind: 'herdr'; readonly paneId: string };
+
 export interface Share {
   readonly token: string;
-  readonly terminalId: number;
+  readonly target: ShareTarget;
   readonly label: string;
   readonly createdAt: number;
   readonly expiresAt: number;
@@ -50,12 +56,12 @@ export class ShareStore {
     this.#newToken = options.newToken ?? (() => randomBytes(TOKEN_BYTES).toString('base64url'));
   }
 
-  create(input: { terminalId: number; label: string; ttlMs?: number }): Share {
+  create(input: { target: ShareTarget; label: string; ttlMs?: number }): Share {
     this.sweep();
     if (this.#shares.size >= SHARE_MAX_ACTIVE) throw new ShareLimitError();
     const ttl = Math.min(Math.max(input.ttlMs ?? SHARE_DEFAULT_TTL_MS, SHARE_MIN_TTL_MS), SHARE_MAX_TTL_MS);
     const createdAt = this.#now();
-    const share: Share = { token: this.#newToken(), terminalId: input.terminalId, label: input.label, createdAt, expiresAt: createdAt + ttl };
+    const share: Share = { token: this.#newToken(), target: input.target, label: input.label, createdAt, expiresAt: createdAt + ttl };
     this.#shares.set(share.token, share);
     return share;
   }

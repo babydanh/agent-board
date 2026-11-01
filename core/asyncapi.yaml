@@ -9502,14 +9502,16 @@ components:
       description: >-
         One live view-only link. `token` is the secret in the link's URL; the client builds the
         URL from its own origin, so it works through whatever address the board was opened on.
-      required: [token, terminalId, label, createdAt, expiresAt]
+      required: [token, kind, label, createdAt, expiresAt]
       properties:
         token:
           type: string
           minLength: 16
           maxLength: 64
-        terminalId:
-          type: integer
+        kind:
+          type: string
+          enum: [cloud, company, herdr]
+          description: What the link shows.
         label:
           type: string
           maxLength: 200
@@ -9523,18 +9525,30 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        Opens a view-only link to one cloud terminal. The answer is a shareResult carrying the new
-        link's token. Refused for a terminal that is not a cloud session, so a link can never expose
-        a local shell.
-      required: [type, requestId, terminalId, label]
+        Opens a view-only link to one screen: a cloud terminal (`terminalId`), an omp session the board
+        runs (`sessionId`) or a herdr pane (`paneId`); exactly the one field `kind` names. The answer is
+        a shareResult carrying the new link's token. Refused for a terminal that is not one of those, so
+        a link can never expose a local shell.
+      required: [type, requestId, kind, label]
       properties:
         type:
           const: shareCreate
         requestId:
           type: string
           format: uuid
+        kind:
+          type: string
+          enum: [cloud, company, herdr]
         terminalId:
           type: integer
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 200
+        paneId:
+          type: string
+          minLength: 1
+          maxLength: 200
         label:
           type: string
           minLength: 1

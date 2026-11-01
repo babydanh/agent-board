@@ -18,6 +18,7 @@ import {
   type SessionMenuFacts,
   sessionMenuItems,
   sessionNameProblem,
+  shareRequestForNode,
   sleepingMenuItems,
   squadRunMenuItems,
   taskCardMenuItems,
@@ -55,6 +56,7 @@ describe('sessionMenuItems', () => {
       'Đổi tên…',
       'Sao chép mã phiên',
       'Sao chép thư mục làm việc',
+      'Share session…',
       'Mở Terminal',
       'Mở Hoạt động',
       'Mở Việc',
@@ -169,6 +171,27 @@ describe('herdr project session menu', () => {
     sessionId: 'w1:p2',
     agentKind,
     state,
+  });
+
+  it('TC-SHARE-50 offers "Share session…" on a board omp session only while it has a run, and on every awake herdr pane', () => {
+    const labels = (items: readonly AgentMenuItem[]) => items.map((entry) => entry.label);
+    expect(labels(sessionMenuItems(BUSY_SESSION, null))).toContain('Share session…');
+    expect(labels(sessionMenuItems({ ...BUSY_SESSION, status: 'parked' }, null))).not.toContain('Share session…');
+    expect(labels(sessionMenuItems({ ...BUSY_SESSION, status: 'archived' }, null))).not.toContain('Share session…');
+    const share = herdrMenuItems('/repo', null, null).find((entry) => entry.id === 'share');
+    expect(share?.action).toEqual({ kind: 'share' });
+    expect(labels(sleepingMenuItems(null))).not.toContain('Share session…');
+  });
+
+  it('TC-SHARE-51 a project-tree session node shares as cloud, board omp session or herdr pane, and a plain ledger session does not', () => {
+    const share = (target: ProjectTreeNode) =>
+      projectNodeMenuItems(target, { hasCheckout: false, folderCount: 1, cloud: true }).some((entry) => entry.id === 'share');
+    expect(shareRequestForNode({ id: 'cloud:m1/fix', kind: 'session', name: 'fix', state: 'working' })).toEqual({ kind: 'cloud', machine: 'm1', session: 'fix', name: 'fix' });
+    expect(shareRequestForNode({ id: 'omp:a', kind: 'session', name: 'chat', sessionId: 'a', boardSessionId: 'board-1', agentKind: 'omp', state: 'working' })).toEqual({ kind: 'company', sessionId: 'board-1', name: 'chat' });
+    expect(shareRequestForNode({ id: 'pane', kind: 'session', name: 'pane', sessionId: 'w1:p2', herdrPaneId: 'w1:p2', agentKind: 'herdr', state: 'working' })).toEqual({ kind: 'herdr', paneId: 'w1:p2', name: 'pane' });
+    expect(shareRequestForNode({ id: 'omp:x', kind: 'session', name: 'ledger only', sessionId: 'x', agentKind: 'omp', state: 'working' })).toBeNull();
+    expect(share({ id: 'omp:a', kind: 'session', name: 'chat', sessionId: 'a', boardSessionId: 'board-1', agentKind: 'omp', state: 'working' })).toBe(true);
+    expect(share({ id: 'omp:x', kind: 'session', name: 'ledger only', sessionId: 'x', agentKind: 'omp', state: 'working' })).toBe(false);
   });
 
   it('TC-SHARE-35 offers "Share session…" on a cloud session that is awake, never on a sleeping or a local one', () => {
@@ -371,6 +394,7 @@ describe('herdrMenuItems', () => {
       'Xem màn hình',
       'Đọc lại màn hình',
       'Mở trong herdr',
+      'Share session…',
       'Sao chép màn hình',
       'Sao chép thư mục',
       'Sao chép pane id',
@@ -471,6 +495,7 @@ describe('work item actions in the agent menu', () => {
       'Mở trong herdr',
       'Giao việc cho agent này…',
       'Mô tả vai trò…',
+      'Share session…',
       'Sao chép màn hình',
       'Sao chép thư mục',
       'Sao chép pane id',

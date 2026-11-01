@@ -25,7 +25,7 @@ import {
 } from '../constants.js';
 import type { PtySession } from '../terminal/ptySessionManager.js';
 import { isAllowedWebSocketOrigin } from '../wsAuth.js';
-import type { ShareStore } from './shareStore.js';
+import type { ShareStore, ShareTarget } from './shareStore.js';
 
 /** Viewers one link serves at once. */
 export const SHARE_MAX_VIEWERS = 8;
@@ -34,13 +34,13 @@ const SWEEP_INTERVAL_MS = 30_000;
 const TOKEN_PATTERN = '^[A-Za-z0-9_-]{16,64}$';
 const WS_OPEN = 1;
 
-/** What the viewer reads of a terminal: the screen, the output, the exit. Never a way to write. */
+/** What the viewer reads of a screen: its snapshot, the output, the exit. Never a way to write. */
 export type ShareFeed = Pick<PtySession, 'cols' | 'rows' | 'snapshot' | 'onData' | 'onExit'>;
 
 export interface ShareRoutesOptions {
   readonly shares: ShareStore;
-  /** The terminal behind a link, or undefined once it is gone. */
-  readonly feedFor: (terminalId: number) => ShareFeed | undefined;
+  /** The screen behind a link, or undefined once it is gone. */
+  readonly feedFor: (target: ShareTarget) => ShareFeed | undefined;
 }
 
 interface ViewerSocket {
@@ -125,7 +125,7 @@ export function registerShareRoutes(app: FastifyInstance, options: ShareRoutesOp
         socket.close(WS_CLOSE_SHARE_UNKNOWN, 'unknown link');
         return;
       }
-      const feed = options.feedFor(share.terminalId);
+      const feed = options.feedFor(share.target);
       if (feed === undefined) {
         socket.close(WS_CLOSE_NO_SESSION, 'no terminal');
         return;

@@ -40,6 +40,7 @@ import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import { handleShareMessage } from './share/handler.js';
 import type { ShareStore } from './share/shareStore.js';
+import type { ShareTargets } from './share/targets.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
@@ -119,6 +120,7 @@ export interface ClientMessageContext {
   getLocalGuard?: () => GitGuardReport | null;
   /** View-only share links; absent when this process serves none. */
   shares?: ShareStore;
+  shareTargets?: ShareTargets;
   /** Project persistence and checkout discovery; request privilege is supplied per socket. */
   projects?: Omit<ProjectCommandContext, 'privileged' | 'agents' | 'herdrSessions'>;
 }
@@ -234,9 +236,10 @@ export function handleClientMessage(
 
   if (
     ctx.shares !== undefined &&
+    ctx.shareTargets !== undefined &&
     handleShareMessage(msg, (message) => send(message as unknown as Record<string, unknown>), {
       shares: ctx.shares,
-      hasTerminal: (terminalId) => ctx.ptyManager?.has(terminalId) === true,
+      targets: ctx.shareTargets,
       privileged: ctx.privileged === true,
     })
   ) {

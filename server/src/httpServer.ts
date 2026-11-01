@@ -48,6 +48,7 @@ import { createTranscriptProgress, type TranscriptFacts } from './projects/sessi
 import { processAlive } from './projects/sessionStop.js';
 import { registerShareRoutes } from './share/shareRoutes.js';
 import { ShareStore } from './share/shareStore.js';
+import { createShareTargets, type ShareTargets } from './share/targets.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { AgentState } from './types.js';
@@ -106,6 +107,8 @@ export interface HttpServerOptions {
   ptyManager?: PtySessionManager;
   /** View-only share links. Standalone with a terminal manager gets a fresh store when absent. */
   shares?: ShareStore;
+  /** What a share link may point at; derived from this server's terminals, herdr link and company folders when absent. */
+  shareTargets?: ShareTargets;
   /** Project persistence and checkout discovery, supplied by the host composition root. */
   projects?: Omit<ProjectCommandContext, 'privileged' | 'agents' | 'herdrSessions'>;
   /** Extra Host names (beyond loopback and a specific bind address) a
@@ -158,13 +161,20 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   const host = options.host ?? '127.0.0.1';
   const allowedHostnames = privilegedHostnames(host, options.allowedHosts ?? []);
 
-  // Share links open terminals to people without the board token, so they exist only where
-  // terminals do: standalone with a PTY manager. Resolved first so every route sees the same store.
-  if (!options.embedded && options.ptyManager) {
-    const ptyManager = options.ptyManager;
+  // Share links show screens to people without the board token, so they exist only in standalone.
+  // Resolved first so every route and every socket sees the same store.
+  if (!options.embedded) {
     const shares = options.shares ?? new ShareStore();
-    registerShareRoutes(app, { shares, feedFor: (terminalId) => ptyManager.get(terminalId) });
-    options = { ...options, shares };
+    const shareTargets = options.shareTargets ?? createShareTargets({
+      ...(options.ptyManager === undefined ? {} : { ptyManager: options.ptyManager }),
+      herdr: options.herdr ?? null,
+      companyPeek: (sessionId) => {
+        const services = options.workspaces?.servicesHolding(sessionId) ?? options.getCompany?.() ?? options.company ?? null;
+        return services?.terminal?.peek?.(sessionId);
+      },
+    });
+    registerShareRoutes(app, { shares, feedFor: (target) => shareTargets.feedFor(target) });
+    options = { ...options, shares, shareTargets };
   }
 
   registerHealthRoute(app);
@@ -474,6 +484,7 @@ function registerWebSocketRoute(
             getLocalGuard: options.getLocalGuard,
             ptyManager: options.ptyManager,
             shares: options.shares,
+            shareTargets: options.shareTargets,
             projects: {
               ...options.projects,
               ...projectTreeFromLedger(options),

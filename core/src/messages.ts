@@ -2521,11 +2521,13 @@ export interface ShareResultMessage {
 
 export interface ShareInfo {
   token: string;
-  terminalId: number;
+  kind: AnonymousSchema_1406;
   label: string;
   createdAt: number;
   expiresAt: number;
 }
+
+export type AnonymousSchema_1406 = 'cloud' | 'company' | 'herdr';
 
 export interface ProjectTreeSnapshotMessage {
   type: 'projectTreeSnapshot';
@@ -3856,10 +3858,15 @@ export interface ProjectMergePreviewRequestMessage {
 export interface ShareCreateMessage {
   type: 'shareCreate';
   requestId: string;
-  terminalId: number;
+  kind: AnonymousSchema_2135;
+  terminalId?: number;
+  sessionId?: string;
+  paneId?: string;
   label: string;
   ttlMinutes?: number;
 }
+
+export type AnonymousSchema_2135 = 'cloud' | 'company' | 'herdr';
 
 export interface ShareRevokeMessage {
   type: 'shareRevoke';
@@ -3875,11 +3882,11 @@ export interface ShareListRequestMessage {
 export interface LibrarySnapshotRequest {
   type: 'librarySnapshotRequest';
   requestId: string;
-  section: AnonymousSchema_2145;
+  section: AnonymousSchema_2148;
   refresh?: boolean;
 }
 
-export type AnonymousSchema_2145 = 'accounts' | 'storage' | 'skills' | 'mcp' | 'claudeRoles';
+export type AnonymousSchema_2148 = 'accounts' | 'storage' | 'skills' | 'mcp' | 'claudeRoles';
 
 export interface LibrarySkillPreviewRequest {
   type: 'librarySkillPreviewRequest';
@@ -3908,18 +3915,18 @@ export interface LibrarySkillModeSet {
 export interface LibraryStorageSearchRequest {
   type: 'libraryStorageSearchRequest';
   requestId: string;
-  kind: AnonymousSchema_2165;
+  kind: AnonymousSchema_2168;
   query?: string;
   repo?: string;
-  agentType?: AnonymousSchema_2168;
+  agentType?: AnonymousSchema_2171;
   from?: string;
   to?: string;
   refresh?: boolean;
 }
 
-export type AnonymousSchema_2165 = 'workItems' | 'sessions' | 'openViking' | 'proofs';
+export type AnonymousSchema_2168 = 'workItems' | 'sessions' | 'openViking' | 'proofs';
 
-export type AnonymousSchema_2168 = 'main' | 'sub' | 'claude' | 'agy';
+export type AnonymousSchema_2171 = 'main' | 'sub' | 'claude' | 'agy';
 
 export interface LibraryWorkItemRestore {
   type: 'libraryWorkItemRestore';
@@ -3930,11 +3937,11 @@ export interface LibraryWorkItemRestore {
 export interface LibraryAccountLogin {
   type: 'libraryAccountLogin';
   requestId: string;
-  tool: AnonymousSchema_2177;
+  tool: AnonymousSchema_2180;
   provider?: string;
 }
 
-export type AnonymousSchema_2177 = 'claude' | 'agy' | 'omp';
+export type AnonymousSchema_2180 = 'claude' | 'agy' | 'omp';
 
 export interface LibraryMcpCheckRequest {
   type: 'libraryMcpCheckRequest';
@@ -4031,11 +4038,11 @@ export interface UsageLimitsRequestMessage {
 export interface UsageHistoryRequestMessage {
   type: 'usageHistoryRequest';
   requestId: string;
-  days: AnonymousSchema_2221;
+  days: AnonymousSchema_2224;
   force?: boolean;
 }
 
-export type AnonymousSchema_2221 = 1 | 7 | 30;
+export type AnonymousSchema_2224 = 1 | 7 | 30;
 
 export interface UsageStatsRequestMessage {
   type: 'usageStatsRequest';

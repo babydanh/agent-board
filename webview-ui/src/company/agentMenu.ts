@@ -137,6 +137,8 @@ export type AgentMenuAction =
   | { kind: 'squadAction'; action: SquadRunMenuAction }
   | { kind: 'wake' }
   | { kind: 'cloudHandoff' }
+  /** "Share session…": a view-only link to this session's screen. */
+  | { kind: 'share' }
   | { kind: 'closeHerdr' }
   | { kind: 'projectNodeAction'; action: ProjectNodeAction };
 
@@ -369,6 +371,10 @@ export function sessionMenuItems(
             action: { kind: 'copy', what: 'cwd' },
           }),
         ]),
+    // Only a session with a run has a terminal to show.
+    ...(controls.kill
+      ? [item({ id: 'share', label: 'Share session…', icon: 'users', action: { kind: 'share' } })]
+      : []),
     ...withGroupStart([
       item({
         id: 'tab-terminal',
@@ -703,6 +709,7 @@ export function herdrMenuItems(
     ]),
     ...withGroupStart(workItemMenuItems(work)),
     ...withGroupStart([
+      item({ id: 'share', label: 'Share session…', icon: 'users', action: { kind: 'share' } }),
       item({
         id: 'copyScreen',
         label: 'Sao chép màn hình',
@@ -907,6 +914,7 @@ export function projectNodeMenuItems(
           ? [add('open-session', 'Mở phiên', 'external', 'openSession')]
           : []),
         ...changes(true),
+        ...(shareRequestForNode(node) === null ? [] : [add('share', 'Share session…', 'users', 'share')]),
         // A board session renames freely; a herdr pane only while awake (a sleeping pane has no handle to rename).
         ...(node.boardSessionId !== undefined || awakePaneOf(node) !== null
           ? [add('rename', 'Đổi tên…', 'pencil', 'rename')]
@@ -928,6 +936,22 @@ export function projectNodeMenuItems(
     case 'file-agg':
       return [];
   }
+}
+
+/** What a share dialog is opened on: a cloud session, an omp session the board runs, or a herdr pane. */
+export type ShareRequest =
+  | { readonly kind: 'cloud'; readonly machine: string; readonly session: string; readonly name: string }
+  | { readonly kind: 'company'; readonly sessionId: string; readonly name: string }
+  | { readonly kind: 'herdr'; readonly paneId: string; readonly name: string };
+
+/** The screen a Project session node can be shared as; null for a session the board neither runs nor shows. */
+export function shareRequestForNode(node: ProjectTreeNode): ShareRequest | null {
+  if (node.state === 'sleeping' || node.state === 'ended') return null;
+  const cloud = parseCloudNodeId(node.id);
+  if (cloud !== null) return { kind: 'cloud', machine: cloud.machine, session: cloud.session, name: node.name };
+  if (node.boardSessionId !== undefined) return { kind: 'company', sessionId: node.boardSessionId, name: node.name };
+  const paneId = awakePaneOf(node);
+  return paneId === null ? null : { kind: 'herdr', paneId, name: node.name };
 }
 
 /** The herdr pane a Project session runs in, while it is awake; null when it has none or sleeps. */

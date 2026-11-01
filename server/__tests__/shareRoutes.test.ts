@@ -13,6 +13,8 @@ import { WS_CLOSE_FORBIDDEN_ORIGIN, WS_CLOSE_NO_SESSION, WS_CLOSE_SHARE_ENDED, W
 import { registerShareRoutes, SHARE_MAX_VIEWERS, type ShareFeed } from '../src/share/shareRoutes.js';
 import { ShareStore } from '../src/share/shareStore.js';
 
+const cloud = (terminalId: number) => ({ kind: 'cloud' as const, terminalId });
+
 class FakeFeed implements ShareFeed {
   cols = 100;
   rows = 30;
@@ -54,7 +56,7 @@ async function start(feeds: Map<number, FakeFeed>) {
   const shares = new ShareStore();
   app = Fastify();
   await app.register(fastifyWebsocket);
-  registerShareRoutes(app, { shares, feedFor: (id) => feeds.get(id) });
+  registerShareRoutes(app, { shares, feedFor: (target) => (target.kind === 'cloud' ? feeds.get(target.terminalId) : undefined) });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
   const port = typeof address === 'object' && address !== null ? address.port : 0;
@@ -88,7 +90,7 @@ const until = async (condition: () => boolean): Promise<void> => {
 describe('share viewer page', () => {
   it('TC-SHARE-09 serves the page for a live link with the label escaped and no-store, no-referrer, noindex headers', async () => {
     const { shares, port } = await start(new Map([[7, new FakeFeed()]]));
-    const { token } = shares.create({ terminalId: 7, label: '<b>danh</b> · fix' });
+    const { token } = shares.create({ target: cloud(7), label: '<b>danh</b> · fix' });
     const response = await fetch(`http://127.0.0.1:${port}/share/${token}`);
     expect(response.status).toBe(200);
     const html = await response.text();
@@ -102,7 +104,7 @@ describe('share viewer page', () => {
 
   it('TC-SHARE-10 answers a revoked, unknown or malformed link with the same 404', async () => {
     const { shares, port } = await start(new Map([[7, new FakeFeed()]]));
-    const { token } = shares.create({ terminalId: 7, label: 'a' });
+    const { token } = shares.create({ target: cloud(7), label: 'a' });
     shares.revoke(token);
     for (const path of [`/share/${token}`, '/share/aaaaaaaaaaaaaaaaaaaaaaaa']) {
       expect((await fetch(`http://127.0.0.1:${port}${path}`)).status).toBe(404);
@@ -115,7 +117,7 @@ describe('share viewer socket', () => {
   it('TC-SHARE-11 sends the screen first, then the live output, then the exit', async () => {
     const feed = new FakeFeed();
     const { shares, port } = await start(new Map([[7, feed]]));
-    const { token } = shares.create({ terminalId: 7, label: 'a' });
+    const { token } = shares.create({ target: cloud(7), label: 'a' });
     const viewer = watch(port, token);
     await until(() => viewer.frames.length === 1);
     expect(viewer.frames[0]).toEqual({ type: 'replay', data: 'SCREEN', cols: 100, rows: 30 });
@@ -128,7 +130,7 @@ describe('share viewer socket', () => {
   it('TC-SHARE-12 never lets a viewer write, resize or otherwise reach the terminal', async () => {
     const feed = new FakeFeed();
     const { shares, port } = await start(new Map([[7, feed]]));
-    const { token } = shares.create({ terminalId: 7, label: 'a' });
+    const { token } = shares.create({ target: cloud(7), label: 'a' });
     const viewer = watch(port, token);
     await until(() => viewer.frames.length === 1);
     viewer.socket.send(JSON.stringify({ type: 'input', data: 'rm -rf /\n' }));
@@ -142,7 +144,7 @@ describe('share viewer socket', () => {
 
   it('TC-SHARE-13 closes at once when the link is revoked while watching', async () => {
     const { shares, port } = await start(new Map([[7, new FakeFeed()]]));
-    const { token } = shares.create({ terminalId: 7, label: 'a' });
+    const { token } = shares.create({ target: cloud(7), label: 'a' });
     const viewer = watch(port, token);
     await until(() => viewer.frames.length === 1);
     shares.revoke(token);
@@ -153,9 +155,9 @@ describe('share viewer socket', () => {
     const feed = new FakeFeed();
     const { shares, port } = await start(new Map([[7, feed]]));
     expect(await watch(port, 'aaaaaaaaaaaaaaaaaaaaaaaa').closed).toBe(WS_CLOSE_SHARE_UNKNOWN);
-    const orphan = shares.create({ terminalId: 99, label: 'gone' });
+    const orphan = shares.create({ target: cloud(99), label: 'gone' });
     expect(await watch(port, orphan.token).closed).toBe(WS_CLOSE_NO_SESSION);
-    const live = shares.create({ terminalId: 7, label: 'a' });
+    const live = shares.create({ target: cloud(7), label: 'a' });
     expect(await watch(port, live.token, { Origin: 'http://evil.example' }).closed).toBe(WS_CLOSE_FORBIDDEN_ORIGIN);
 
     const watchers = Array.from({ length: SHARE_MAX_VIEWERS }, () => watch(port, live.token));
@@ -166,7 +168,7 @@ describe('share viewer socket', () => {
   it('TC-SHARE-15 stops listening to the terminal once the viewer leaves', async () => {
     const feed = new FakeFeed();
     const { shares, port } = await start(new Map([[7, feed]]));
-    const { token } = shares.create({ terminalId: 7, label: 'a' });
+    const { token } = shares.create({ target: cloud(7), label: 'a' });
     const viewer = watch(port, token);
     await until(() => feed.listeners() === 1);
     viewer.socket.close();

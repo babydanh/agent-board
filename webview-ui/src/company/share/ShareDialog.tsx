@@ -1,10 +1,9 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { ProjectTreeNode } from '../../../../core/src/messages.js';
+import type { ShareRequest } from '../agentMenu.js';
 import { copyText } from '../clipboard.js';
 import { CompanyButton } from '../components/CompanyButton.js';
-import { parseCloudNodeId } from '../fleet/cloudNodes.js';
 import { fleetStore } from '../fleet/fleetClient.js';
 import { useFleetState } from '../fleet/fleetStore.js';
 import { shareStore } from './shareClient.js';
@@ -23,18 +22,18 @@ function expiryLabel(expiresAt: number): string {
 }
 
 /**
- * Share a cloud session as a link that shows its terminal read-only. The link opens through the
- * address the board itself was opened on, so it reaches exactly the people who can reach the board
- * (the tailnet, when the board is served through Tailscale).
+ * Share a session (cloud, omp run by the board, or a herdr pane) as a link that shows its screen
+ * read-only. The link opens through the address the board itself was opened on, so it reaches
+ * exactly the people who can reach the board (the tailnet, when it is served through Tailscale).
  */
-export function ShareDialog({ node, onClose }: { node: ProjectTreeNode; onClose: () => void }) {
-  const cloud = parseCloudNodeId(node.id);
+export function ShareDialog({ request, onClose }: { request: ShareRequest; onClose: () => void }) {
+  const cloud = request.kind === 'cloud' ? request : null;
   const fleet = useFleetState(fleetStore);
   const shares = useShareState(shareStore);
   const [minutes, setMinutes] = useState<number>(DEFAULT_LIFETIME_MINUTES);
   const [opening, setOpening] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const label = cloud === null ? node.name : `${cloud.machine} · ${node.name}`;
+  const label = cloud === null ? request.name : `${cloud.machine} · ${request.name}`;
   const alreadyOpen = fleet.terminal !== null && cloud !== null && fleet.terminal.machine === cloud.machine && fleet.terminal.session === cloud.session;
   // True while the terminal in the drawer was opened by this dialog, so it is the dialog's to close again.
   const openedHere = useRef(false);
@@ -52,7 +51,7 @@ export function ShareDialog({ node, onClose }: { node: ProjectTreeNode; onClose:
       setOpening(false);
       if (openedHere.current) fleetStore.closeTerminal();
       openedHere.current = false;
-      shareStore.create({ terminalId: terminal.terminalId, label, ttlMinutes: minutes });
+      shareStore.create({ target: { kind: 'cloud', terminalId: terminal.terminalId }, label, ttlMinutes: minutes });
     } else if (fleet.action === null && fleet.actionError !== null) {
       setOpening(false);
       openedHere.current = false;
@@ -60,11 +59,19 @@ export function ShareDialog({ node, onClose }: { node: ProjectTreeNode; onClose:
   }, [opening, cloud, fleet.terminal, fleet.action, fleet.actionError, label, minutes]);
 
   function create(): void {
-    if (cloud === null) return;
     shareStore.reset();
+    if (request.kind === 'company') {
+      shareStore.create({ target: { kind: 'company', sessionId: request.sessionId }, label, ttlMinutes: minutes });
+      return;
+    }
+    if (request.kind === 'herdr') {
+      shareStore.create({ target: { kind: 'herdr', paneId: request.paneId }, label, ttlMinutes: minutes });
+      return;
+    }
+    if (cloud === null) return;
     if (alreadyOpen && fleet.terminal !== null) {
       // Already open in the drawer: use it and leave the drawer as the reader had it.
-      shareStore.create({ terminalId: fleet.terminal.terminalId, label, ttlMinutes: minutes });
+      shareStore.create({ target: { kind: 'cloud', terminalId: fleet.terminal.terminalId }, label, ttlMinutes: minutes });
       return;
     }
     openedHere.current = true;
@@ -84,8 +91,8 @@ export function ShareDialog({ node, onClose }: { node: ProjectTreeNode; onClose:
   }
 
   const created = shares.createdToken;
-  const busy = opening || shares.busy || fleet.action !== null;
-  const error = shares.error ?? (opening ? null : fleet.actionError);
+  const busy = opening || shares.busy || (cloud !== null && fleet.action !== null);
+  const error = shares.error ?? (cloud === null || opening ? null : fleet.actionError);
 
   return createPortal(
     <div className="company-ui">
@@ -100,13 +107,13 @@ export function ShareDialog({ node, onClose }: { node: ProjectTreeNode; onClose:
           className="relative flex max-h-[85vh] w-[min(520px,94vw)] flex-col gap-3 overflow-y-auto rounded-(--company-radius-md) bg-panel p-3 text-xs text-text max-md:w-full max-md:rounded-none"
         >
           <header className="flex items-center justify-between gap-2">
-            <h2 id="share-title" className="min-w-0 truncate text-sm text-text">Share session · {node.name}</h2>
+            <h2 id="share-title" className="min-w-0 truncate text-sm text-text">Share session · {request.name}</h2>
             <CompanyButton autoFocus type="button" size="sm" onClick={onClose}>Đóng</CompanyButton>
           </header>
 
           <p className="text-text-muted">
-            Người nhận mở link để xem terminal trực tiếp, chỉ đọc: không gõ, không điều khiển được. Chỉ người vào được địa chỉ board này
-            (trong mạng Tailscale của bạn) mới mở được.
+            Người nhận mở link để xem màn hình phiên trực tiếp, chỉ đọc: không gõ, không điều khiển được. Chỉ người vào được địa chỉ
+            board này (trong mạng Tailscale của bạn) mới mở được.
           </p>
           {isLoopbackHostname(window.location.hostname) && (
             <p role="note" data-testid="share-loopback-warning" className="rounded bg-warning/12 px-2 py-1.5 text-warning">
@@ -132,7 +139,7 @@ export function ShareDialog({ node, onClose }: { node: ProjectTreeNode; onClose:
                 ))}
               </select>
             </label>
-            <CompanyButton type="button" variant="accent" disabled={busy || cloud === null} onClick={create} data-testid="share-create">
+            <CompanyButton type="button" variant="accent" disabled={busy} onClick={create} data-testid="share-create">
               {opening || shares.busy ? 'Đang tạo…' : 'Tạo link'}
             </CompanyButton>
           </div>

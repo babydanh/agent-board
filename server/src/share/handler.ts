@@ -1,35 +1,50 @@
 /**
  * Client-message dispatch for view-only share links. Every command needs a privileged connection,
- * and only a cloud terminal can be shared: a link to a local shell would hand a stranger a view of
- * this machine, so those ids are refused no matter what the client sends.
+ * and what may be shared is decided by `targets.refusal`: a link to a local shell would hand a
+ * stranger a view of this machine, so only cloud, board-run omp and herdr targets are ever accepted.
  */
 
 import type { ServerMessage } from '../../../core/src/messages.js';
-import { FLEET_TERMINAL_ID_BASE } from '../fleet/constants.js';
-import { type Share, ShareLimitError, type ShareStore } from './shareStore.js';
+import { type Share, ShareLimitError, type ShareStore, type ShareTarget } from './shareStore.js';
+import type { ShareTargets } from './targets.js';
 
 const FALLBACK_REQUEST_ID = '00000000-0000-4000-8000-000000000000';
 const MS_PER_MINUTE = 60_000;
 const MAX_LABEL_LENGTH = 200;
+const MAX_REF_LENGTH = 200;
 
 export const SHARE_REASON_READ_ONLY = 'Kết nối chỉ đọc không được phép share session.';
-export const SHARE_REASON_NOT_CLOUD = 'Chỉ share được phiên cloud, không share terminal của máy này.';
-export const SHARE_REASON_NO_TERMINAL = 'Phiên này không còn chạy nên không share được.';
 export const SHARE_REASON_BAD_INPUT = 'Yêu cầu share không hợp lệ.';
 export const SHARE_REASON_NO_LINK = 'Link này đã hết hạn hoặc không tồn tại.';
 
 export interface ShareCommandContext {
   readonly shares: ShareStore;
-  /** True while the board still holds a terminal with this id. */
-  readonly hasTerminal: (terminalId: number) => boolean;
+  readonly targets: Pick<ShareTargets, 'refusal'>;
   readonly privileged: boolean;
 }
 
 type ShareReply = Extract<ServerMessage, { type: 'shareResult' }>;
 
 function toInfo(share: Share): ShareReply['shares'][number] {
-  const { token, terminalId, label, createdAt, expiresAt } = share;
-  return { token, terminalId, label, createdAt, expiresAt };
+  const { token, target, label, createdAt, expiresAt } = share;
+  return { token, kind: target.kind, label, createdAt, expiresAt };
+}
+
+/** The target a shareCreate names, or null when it does not name exactly one well-formed target. */
+function parseTarget(msg: Record<string, unknown>): ShareTarget | null {
+  const { kind, terminalId, sessionId, paneId } = msg;
+  const text = (value: unknown): value is string =>
+    typeof value === 'string' && value !== '' && value.length <= MAX_REF_LENGTH;
+  if (kind === 'cloud' && Number.isInteger(terminalId) && sessionId === undefined && paneId === undefined) {
+    return { kind, terminalId: terminalId as number };
+  }
+  if (kind === 'company' && text(sessionId) && terminalId === undefined && paneId === undefined) {
+    return { kind, sessionId };
+  }
+  if (kind === 'herdr' && text(paneId) && terminalId === undefined && sessionId === undefined) {
+    return { kind, paneId };
+  }
+  return null;
 }
 
 /** Handles one share command; returns false, without replying, for any other message. */
@@ -67,25 +82,22 @@ function create(
   context: ShareCommandContext,
   reply: (ok: boolean, extra?: { reason?: string; token?: string }) => void,
 ): void {
-  const { terminalId, label, ttlMinutes } = msg;
+  const { label, ttlMinutes } = msg;
   const labelText = typeof label === 'string' ? label.trim() : '';
   const ttlValid = ttlMinutes === undefined || (typeof ttlMinutes === 'number' && Number.isFinite(ttlMinutes) && ttlMinutes > 0);
-  if (!Number.isInteger(terminalId) || labelText === '' || labelText.length > MAX_LABEL_LENGTH || !ttlValid) {
+  const target = parseTarget(msg);
+  if (target === null || labelText === '' || labelText.length > MAX_LABEL_LENGTH || !ttlValid) {
     reply(false, { reason: SHARE_REASON_BAD_INPUT });
     return;
   }
-  const id = terminalId as number;
-  if (id <= FLEET_TERMINAL_ID_BASE) {
-    reply(false, { reason: SHARE_REASON_NOT_CLOUD });
-    return;
-  }
-  if (!context.hasTerminal(id)) {
-    reply(false, { reason: SHARE_REASON_NO_TERMINAL });
+  const refusal = context.targets.refusal(target);
+  if (refusal !== null) {
+    reply(false, { reason: refusal });
     return;
   }
   try {
     const share = context.shares.create({
-      terminalId: id,
+      target,
       label: labelText,
       ...(typeof ttlMinutes === 'number' ? { ttlMs: ttlMinutes * MS_PER_MINUTE } : {}),
     });
@@ -95,4 +107,3 @@ function create(
     reply(false, { reason: error.message });
   }
 }
-
