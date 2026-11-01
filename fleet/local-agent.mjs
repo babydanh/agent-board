@@ -14,7 +14,7 @@ import { homedir, hostname } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { changedRanges, contentIn, dirtyPaths, fitReport, git, repoFromOrigin } from './agent.mjs';
+import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, repoFromOrigin } from './agent.mjs';
 import { signJwt } from './jwt.mjs';
 
 export const LOCAL_REPORT_INTERVAL_MS = 60_000;
@@ -61,7 +61,9 @@ export function repoRow(path) {
   const counts = git(path, 'rev-list', '--left-right', '--count', '@{upstream}...HEAD').split(/\s+/);
   const githubRepo = repoFromOrigin(git(path, 'remote', 'get-url', 'origin'));
   const head = git(path, 'rev-parse', 'HEAD');
-  const originMain = git(path, 'rev-parse', 'origin/main');
+  const defaultRef = defaultBranch(path);
+  // Field name kept for the hub and the board: the value is the head of the default branch, whatever its name.
+  const originMain = git(path, 'rev-parse', defaultRef);
   const common = git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir');
   return {
     path,
@@ -72,7 +74,7 @@ export function repoRow(path) {
     ...(originMain === '' ? {} : { origin_main: originMain }),
     behind: Number(counts[0]) || 0,
     ahead: Number(counts[1]) || 0,
-    merged: contentIn(path, 'origin/main'),
+    merged: contentIn(path, defaultRef),
     staged: contentIn(path, 'origin/staging'),
     dirty_files: dirtyPaths(path),
     changes: changedRanges(path),
