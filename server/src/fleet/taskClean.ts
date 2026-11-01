@@ -6,13 +6,17 @@
  * The only path it ever removes comes from the ledger entry and must lie under the worktree base. The slug is
  * validated by the caller against FLEET_TASK_SLUG and is only ever read as "$1", never spliced into code.
  * A task with no ledger entry and no tmux session is already gone: that is success, so the board can forget its row.
- * Exit codes: 3 a live session cloud-giao did not create, or a path it will not touch, 5 git refused, 7 unsaved work. The last line is the reason, or `OK <slug>`.
+ * A tmux session cloud-giao did not create (started by hand) has no worktree of ours: only the session is closed, every file stays.
+ * Exit codes: 3 a path it will not touch (or a session tmux would not close), 5 git refused, 7 unsaved work. The last line is the reason, or `OK <slug>`.
  */
 export const TASK_CLEAN_SCRIPT = String.raw`set -u
 slug="$1"
 f="$HOME/.cloud-viec/$slug.json"
 if [ ! -f "$f" ]; then
-  if tmux has-session -t "=$slug" 2>/dev/null; then echo "Phien $slug dang chay nhung khong do cloud-giao tao, board khong don"; exit 3; fi
+  if tmux has-session -t "=$slug" 2>/dev/null; then
+    tmux kill-session -t "=$slug" 2>/dev/null || { echo "Khong tat duoc phien $slug"; exit 3; }
+    echo "OK $slug (chi tat phien tmux, thu muc lam viec con nguyen)"; exit 0
+  fi
   echo "OK $slug (khong con gi tren may)"; exit 0
 fi
 base="\${CLOUD_WT_BASE:-/data/home/wt}"
