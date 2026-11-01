@@ -308,8 +308,8 @@ function TaskForm({ machines, busy, request }: { machines: readonly FleetMachine
   const [repo, setRepo] = useState<(typeof TASK_REPOS)[number]['value']>('all');
   const [slug, setSlug] = useState('');
   const [prompt, setPrompt] = useState('');
-  const candidates = projectMachines(machines);
-  const target = machine === AUTO ? pickMachine(machines) : machine;
+  const candidates = projectMachines(machines, repo);
+  const target = machine === AUTO ? pickMachine(machines, repo) : machine;
   const slugOk = slug === '' || /^[a-z0-9][a-z0-9-]{0,39}$/.test(slug);
   const ready = !busy && target !== null && slugOk && prompt.trim() !== '';
   const load = candidates.find((pick) => pick.machine === target);
@@ -341,7 +341,7 @@ function TaskForm({ machines, busy, request }: { machines: readonly FleetMachine
         <p className="min-w-0 flex-1 text-xs text-text-muted">
           {target === null
             ? candidates.length === 0
-              ? 'Chưa có máy nào đủ 3 repo đồ án.'
+              ? `Chưa có máy nào ${repo === 'all' ? 'đủ 3 repo đồ án' : 'có repo này'}.`
               : `Cả ${candidates.length} máy đều đã chạy đủ ${MAX_SESSIONS_PER_MACHINE} việc. Đợi một việc xong hoặc chọn máy trong Tùy chọn.`
             : `Sẽ chạy trên ${target}${load ? ` (đang có ${load.sessions}/${MAX_SESSIONS_PER_MACHINE} việc)` : ''} · ${TASK_REPOS.find((item) => item.value === repo)?.label ?? repo}`}
         </p>

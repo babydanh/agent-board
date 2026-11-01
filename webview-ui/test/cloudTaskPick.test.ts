@@ -3,15 +3,21 @@ import { describe, expect, it } from 'vitest';
 import type { FleetMachineSnapshot } from '../../core/src/messages.js';
 import { cloudHasRepo, pickMachine, PROJECT_REPOS, slugFromPrompt } from '../src/company/fleet/cloudTaskPick.js';
 
-function machine(agentId: string, sessions: number, repos = PROJECT_REPOS): FleetMachineSnapshot {
+function machine(
+  agentId: string,
+  sessions: number,
+  repos = PROJECT_REPOS,
+  extra: { idleSeconds?: number; diskFreeGb?: number; state?: 'online' | 'stale' } = {},
+): FleetMachineSnapshot {
   return {
     agentId,
     receivedAt: 0,
-    state: 'online',
+    state: extra.state ?? 'online',
+    ...(extra.diskFreeGb === undefined ? {} : { diskFreeGb: extra.diskFreeGb }),
     sessionCount: 0,
     engines: [],
     repos: repos.map((name) => ({ name, branch: 'main', ahead: 0, behind: 0, dirtyCount: 0 })),
-    tmuxSessions: Array.from({ length: sessions }, (_, i) => ({ name: `s${i}`, attached: false, idleSeconds: 0 })),
+    tmuxSessions: Array.from({ length: sessions }, (_, i) => ({ name: `s${i}`, attached: false, idleSeconds: extra.idleSeconds ?? 0 })),
   };
 }
 
@@ -23,6 +29,30 @@ describe('pickMachine', () => {
   it('skips machines already running three agents and returns null when all are full', () => {
     expect(pickMachine([machine('danh', 3), machine('danh3', 2)])).toBe('danh3');
     expect(pickMachine([machine('danh', 3), machine('danh1', 4)])).toBeNull();
+  });
+});
+
+describe('pickMachine ranking', () => {
+  it('prefers a machine whose sessions are idle over one with the same number all working', () => {
+    expect(pickMachine([machine('danh', 2), machine('danh1', 2, PROJECT_REPOS, { idleSeconds: 3600 })])).toBe('danh1');
+  });
+
+  it('avoids a machine short on disk unless it is the only one left', () => {
+    const low = machine('danh', 0, PROJECT_REPOS, { diskFreeGb: 1 });
+    expect(pickMachine([low, machine('danh1', 2, PROJECT_REPOS, { diskFreeGb: 20 })])).toBe('danh1');
+    expect(pickMachine([low])).toBe('danh');
+  });
+
+  it('breaks a tie by free disk, not by name, and puts a stale report last', () => {
+    expect(pickMachine([machine('danh', 1, PROJECT_REPOS, { diskFreeGb: 10 }), machine('danh3', 1, PROJECT_REPOS, { diskFreeGb: 40 })])).toBe('danh3');
+    expect(pickMachine([machine('danh', 0, PROJECT_REPOS, { state: 'stale' }), machine('danh1', 2)])).toBe('danh1');
+  });
+
+  it('asks only for the repository the task needs', () => {
+    const onlyWeb = machine('danh4', 0, [PROJECT_REPOS[1]!]);
+    expect(pickMachine([onlyWeb, machine('danh', 2)])).toBe('danh');
+    expect(pickMachine([onlyWeb, machine('danh', 2)], 'web')).toBe('danh4');
+    expect(pickMachine([onlyWeb], 'backend')).toBeNull();
   });
 });
 
