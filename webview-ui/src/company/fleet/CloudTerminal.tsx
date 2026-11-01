@@ -1,6 +1,7 @@
 import '@xterm/xterm/css/xterm.css';
 
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import { useEffect, useRef, useState } from 'react';
 
@@ -38,6 +39,15 @@ export function CloudTerminal({ terminalId, label, onClose, fill = false }: { te
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(element);
+    // The default DOM renderer repaints thousands of nodes per scroll or TUI redraw; WebGL draws on the GPU.
+    // Without WebGL (or after the context is lost) xterm keeps drawing with its DOM renderer.
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch {
+      // keep the DOM renderer
+    }
     fit.fit();
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
