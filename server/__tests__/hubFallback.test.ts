@@ -1,22 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
 import { CloudControl, type CloudControlDeps, type InstaboxResult } from '../src/fleet/cloudControl.js';
-import { parseTmuxPanes, runningMachineNames, TMUX_PANES_SCRIPT } from '../src/fleet/hubFallback.js';
+import { listedMachines, parseTmuxPanes, TMUX_PANES_SCRIPT } from '../src/fleet/hubFallback.js';
 
-describe('runningMachineNames (TC-HUBFALLBACK-01)', () => {
-  it('keeps only machines InstaBox reports running, so a sleeping one is never woken', () => {
+describe('listedMachines (TC-HUBFALLBACK-01)', () => {
+  it('marks only machines InstaBox reports running as awake, so a sleeping one is never woken', () => {
     const json = JSON.stringify([
       { name: 'danh', state: 'running' },
       { name: 'danh2', state: 'suspended' },
       { name: 'danh3', state: 'paused' },
       { name: 'danh4' },
     ]);
-    expect(runningMachineNames(json)).toEqual(['danh']);
+    expect(listedMachines(json)).toEqual([
+      { name: 'danh', running: true },
+      { name: 'danh2', running: false },
+      { name: 'danh3', running: false },
+      { name: 'danh4', running: false },
+    ]);
   });
 
   it('reads garbage as no machines', () => {
-    expect(runningMachineNames('not json')).toEqual([]);
-    expect(runningMachineNames('{"name":"danh","state":"running"}')).toEqual([]);
+    expect(listedMachines('not json')).toEqual([]);
+    expect(listedMachines('{"name":"danh","state":"running"}')).toEqual([]);
   });
 });
 
@@ -58,10 +63,13 @@ describe('CloudControl.readRunningTmux (TC-HUBFALLBACK-03)', () => {
 
     const response = await cloud.readRunningTmux();
 
-    expect(response.machines.map((machine) => machine.agent_id)).toEqual(['danh']);
+    expect(response.machines.map((machine) => machine.agent_id)).toEqual(['danh', 'danh3']);
+    // A sleeping machine is listed as never seen, so the board sorts it under the sleepers; nothing is run on it.
+    expect(response.machines[1]).toMatchObject({ agent_id: 'danh3', received_at: 0, tmux: [] });
     expect(response.machines[0]?.tmux).toEqual([{ name: 'hi-dnma', attached: false, idle_seconds: 1, cwd: '/x' }]);
     const execs = calls.filter((args) => args[0] === 'exec');
     expect(execs.map((args) => args[1]).sort()).toEqual(['danh', 'danh1']);
+    expect(execs.some((args) => args[1] === 'danh3')).toBe(false);
     expect(execs[0]?.at(-1)).toBe(TMUX_PANES_SCRIPT);
     expect(calls.some((args) => args[0] === 'start' || args[0] === 'wake')).toBe(false);
   });

@@ -55,7 +55,7 @@ import {
   FLEET_TERMINAL_ID_BASE,
 } from './constants.js';
 import type { FleetHubMachine, FleetHubResponse } from './hubClient.js';
-import { parseTmuxPanes, runningMachineNames, TMUX_PANES_SCRIPT } from './hubFallback.js';
+import { listedMachines, parseTmuxPanes, TMUX_PANES_SCRIPT } from './hubFallback.js';
 import { IMAGE_UPLOAD_BASE64, IMAGE_UPLOAD_NAME, imageUploadScript } from './imageUpload.js';
 import { LAVISH_DELETE_SCRIPT } from './lavishDelete.js';
 import { PANE_PEEK_SCRIPT, parsePanePeek } from './paneAsk.js';
@@ -447,12 +447,17 @@ export class CloudControl {
     const homes = await this.deps.listConfigHomes();
     const listings = await Promise.all(homes.map((home) => this.deps.run(['ls', '--json'], home).catch(() => null)));
     const owner = new Map<string, string>();
+    const asleep = new Set<string>();
     homes.forEach((home, index) => {
-      for (const name of runningMachineNames(listings[index]?.stdout ?? '')) {
-        if (FLEET_MACHINE_NAME.test(name) && !owner.has(name)) owner.set(name, home);
+      for (const { name, running } of listedMachines(listings[index]?.stdout ?? '')) {
+        if (!FLEET_MACHINE_NAME.test(name) || owner.has(name) || asleep.has(name)) continue;
+        if (running) owner.set(name, home);
+        else asleep.add(name);
       }
     });
     const nowMs = this.deps.now();
+    // A sleeping machine is listed as never seen (received_at 0 reads as "stale"): nothing is run on it.
+    const sleepers = [...asleep].map((name): FleetHubMachine => ({ agent_id: name, received_at: 0, sessions: [], repos: [], tmux: [] }));
     const answers = await Promise.all(
       [...owner].map(async ([name, home]): Promise<FleetHubMachine | null> => {
         try {
@@ -464,7 +469,7 @@ export class CloudControl {
         }
       }),
     );
-    const response: FleetHubResponse = { now: nowMs, machines: answers.filter((machine) => machine !== null) };
+    const response: FleetHubResponse = { now: nowMs, machines: [...answers.filter((machine) => machine !== null), ...sleepers] };
     this.#fallback = { at: nowMs, response };
     return response;
   }

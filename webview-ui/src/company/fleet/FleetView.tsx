@@ -9,6 +9,8 @@ import { FLEET_ACTION_LABEL } from './fleetActionLabel.js';
 import { fleetStore } from './fleetClient.js';
 import { createFleetDiffCommentSelector, type FleetDiffCommentSelection } from './fleetDiffComment.js';
 import { type FleetState, useFleetState } from './fleetStore.js';
+import { splitMachines } from './sleepingMachines.js';
+import { SleepingMachinesDialog } from './SleepingMachinesDialog.js';
 
 type TaskEngine = NonNullable<FleetTaskCreateMessage['engine']>;
 /** "Phiên mới · Claude/omp cloud" from a right-click menu: which agent the request box should start with. */
@@ -23,6 +25,8 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
   const fleet = useFleetState(fleetStore);
   const localBranches = fleet.snapshot?.localBranches ?? [];
   const branchAnalyses = fleet.snapshot?.branchAnalyses ?? [];
+  const [sleepersOpen, setSleepersOpen] = useState(false);
+  const { awake, asleep } = splitMachines(fleet.snapshot?.machines ?? []);
 
   return (
     <div className="company-shell-page flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -105,9 +109,9 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
           fleet.snapshot?.hubError === undefined && (
             <p className="text-sm text-text-muted">Hub chưa báo cáo máy nào.</p>
           )}
-        {fleet.snapshot !== null && fleet.snapshot.machines.length > 0 && (
+        {awake.length > 0 && (
           <div className="grid gap-3 md:grid-cols-2">
-            {fleet.snapshot.machines.map((machine) => (
+            {awake.map((machine) => (
               <MachineCard
                 key={machine.agentId}
                 machine={machine}
@@ -116,6 +120,19 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
               />
             ))}
           </div>
+        )}
+        {asleep.length > 0 && (
+          <button type="button" className="company-btn company-btn-md company-btn-ghost" onClick={() => setSleepersOpen(true)}>
+            Máy đang ngủ ({asleep.length}) · xem thêm
+          </button>
+        )}
+        {sleepersOpen && asleep.length > 0 && (
+          <SleepingMachinesDialog
+            machines={asleep}
+            wakingMachine={fleet.action?.kind === 'wake' ? fleet.action.machine : null}
+            busy={fleet.action !== null}
+            onClose={() => setSleepersOpen(false)}
+          />
         )}
         {fleet.snapshot !== null && (
           <section aria-labelledby="fleet-overlaps-title" className="space-y-2">

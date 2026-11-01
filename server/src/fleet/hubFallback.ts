@@ -4,13 +4,15 @@ import type { FleetHubTmux } from './hubClient.js';
 /** One remote shell line: every tmux pane as `session|attached|last-activity-epoch|cwd`. Names never reach it. */
 export const TMUX_PANES_SCRIPT = "tmux list-panes -a -F '#{session_name}|#{session_attached}|#{session_activity}|#{pane_current_path}' 2>/dev/null";
 
-/** The machines `instabox ls --json` reports as running; any other state (suspended, paused) is left asleep. */
-export function runningMachineNames(json: string): string[] {
+/** The machines of `instabox ls --json`; only a `running` one is awake, any other state (suspended, paused) is asleep. */
+export function listedMachines(json: string): { name: string; running: boolean }[] {
   try {
     const parsed: unknown = JSON.parse(json);
     if (!Array.isArray(parsed)) return [];
     return parsed.flatMap((box: unknown) =>
-      box && typeof box === 'object' && 'name' in box && typeof box.name === 'string' && 'state' in box && box.state === 'running' ? [box.name] : [],
+      box && typeof box === 'object' && 'name' in box && typeof box.name === 'string'
+        ? [{ name: box.name, running: 'state' in box && box.state === 'running' }]
+        : [],
     );
   } catch {
     return [];
