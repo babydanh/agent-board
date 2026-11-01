@@ -265,12 +265,16 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     },
     connect: () => {
       const requestId = newRequestId();
+      // A (re)connect means the old socket is gone and with it the answer to any action still waiting; keeping it would lock every button.
+      if (state.action?.kind === 'lavish') settleTab(null);
       commit({
         ...state,
         connection: state.connection + 1,
         probeRequestId: requestId,
         latestRequestId: requestId,
         error: null,
+        action: null,
+        actionError: null,
       });
       transmit({ type: 'fleetRequest', requestId });
     },

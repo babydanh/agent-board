@@ -222,3 +222,31 @@ describe('fleet lavish delete', () => {
     expect(sent).toHaveLength(1);
   });
 });
+
+describe('fleet reconnect', () => {
+  it('drops an action whose answer was lost with the old socket, so the next click is sent', () => {
+    const sent: ClientMessage[] = [];
+    let n = 0;
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => `r${(n += 1)}` });
+
+    store.openTerminal('danh', 'heloo-74pr');
+    expect(store.getSnapshot().action).toMatchObject({ kind: 'terminal' });
+
+    store.connect();
+
+    expect(store.getSnapshot().action).toBeNull();
+    store.openTerminal('danh', 'heloo-74pr');
+    expect(sent.filter((message) => message.type === 'fleetTerminalOpen')).toHaveLength(2);
+  });
+
+  it('closes the tab a lost lavish open had reserved', () => {
+    const closed: string[] = [];
+    const store = createFleetStore({ send: () => undefined, newRequestId: () => 'r1' });
+
+    store.openLavish('danh', '75553638e6141283', { navigate: () => undefined, close: () => closed.push('closed') });
+    store.connect();
+
+    expect(closed).toEqual(['closed']);
+    expect(store.getSnapshot().action).toBeNull();
+  });
+});
