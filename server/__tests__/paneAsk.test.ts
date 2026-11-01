@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parsePanePeek, screenAsksUser } from '../src/fleet/paneAsk.js';
+import { askedQuestion, parsePanePeek, screenAsksUser } from '../src/fleet/paneAsk.js';
 
 const PERMISSION_MENU = [
   '● Running git log --oneline -1',
@@ -44,14 +44,35 @@ describe('screenAsksUser', () => {
   });
 });
 
+describe('askedQuestion', () => {
+  it('TC-CLOUD-ASK-01 reads the question above the options, then the options', () => {
+    expect(askedQuestion(QUESTION_MENU)).toBe('Which database should the report use? — 1. Postgres / 2. SQLite');
+    expect(askedQuestion(PERMISSION_MENU)).toBe(
+      'Allow this read outside the working directories? — 1. Yes, and keep allowing any reads outside the working directories / 2. No, and block reads outside the working directories from now on / 3. No, and ask again next time',
+    );
+  });
+
+  it('TC-CLOUD-ASK-02 is null for no menu, and falls back to the options when nothing is above them', () => {
+    expect(askedQuestion(IDLE_PROMPT)).toBeNull();
+    expect(askedQuestion('1. Yes\n2. No\nEnter to select')).toBe('1. Yes / 2. No');
+  });
+
+  it('TC-CLOUD-ASK-03 never returns more than 300 characters', () => {
+    const long = ['x'.repeat(500), ' ❯ 1. Yes', ' Esc to cancel'].join('\n');
+    expect(askedQuestion(long)?.length).toBe(300);
+  });
+});
+
 describe('parsePanePeek', () => {
-  it('splits the dump per session and keeps only the sessions that ask', () => {
+  it('splits the dump per session and keeps only the sessions that ask, with their question', () => {
     const dump = ['@@BOARD-PEEK@@ fix-aqp', PERMISSION_MENU, '@@BOARD-PEEK@@ audit-aqp', IDLE_PROMPT, '@@BOARD-PEEK@@ other', QUESTION_MENU].join('\n');
-    expect([...parsePanePeek(dump)].sort()).toEqual(['fix-aqp', 'other']);
+    const asking = parsePanePeek(dump);
+    expect([...asking.keys()].sort()).toEqual(['fix-aqp', 'other']);
+    expect(asking.get('other')).toContain('Which database should the report use?');
   });
 
   it('returns nothing for noise before the first marker or an empty dump', () => {
-    expect(parsePanePeek('warning: something\n')).toEqual(new Set());
-    expect(parsePanePeek('')).toEqual(new Set());
+    expect(parsePanePeek('warning: something\n').size).toBe(0);
+    expect(parsePanePeek('').size).toBe(0);
   });
 });

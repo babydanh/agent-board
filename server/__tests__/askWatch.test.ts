@@ -24,20 +24,24 @@ function snapshot(...machines: Machine[]): FleetSnapshotMessage {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const askingOf = (message: FleetSnapshotMessage, agent: string) => message.machines.find((m) => m.agentId === agent)?.tmuxSessions?.filter((s) => s.asking === true).map((s) => s.name);
+const questionOf = (message: FleetSnapshotMessage, agent: string, name: string) => message.machines.find((m) => m.agentId === agent)?.tmuxSessions?.find((s) => s.name === name)?.question;
 
 describe('createAskWatch', () => {
   it('never waits for a peek: the first snapshot is returned as it came, the next one carries the answer', async () => {
-    const peek = vi.fn(async () => new Set(['fix']));
+    const peek = vi.fn(async () => new Map([['fix', 'Which database? — 1. Postgres']]));
     const watch = createAskWatch(peek, () => 0);
     const first = watch.annotate(snapshot(machine('danh1', [{ name: 'fix', idleSeconds: 300 }])));
     expect(askingOf(first, 'danh1')).toEqual([]);
     await flush();
     expect(peek).toHaveBeenCalledWith('danh1', ['fix']);
-    expect(askingOf(watch.annotate(snapshot(machine('danh1', [{ name: 'fix', idleSeconds: 300 }]))), 'danh1')).toEqual(['fix']);
+    const second = watch.annotate(snapshot(machine('danh1', [{ name: 'fix', idleSeconds: 300 }])));
+    expect(askingOf(second, 'danh1')).toEqual(['fix']);
+    // TC-CLOUD-ASK-04: the snapshot carries what the menu asks.
+    expect(questionOf(second, 'danh1', 'fix')).toBe('Which database? — 1. Postgres');
   });
 
   it('does not peek a session at work, an omp session or an offline machine', async () => {
-    const peek = vi.fn(async () => new Set<string>());
+    const peek = vi.fn(async () => new Map<string, string>());
     const watch = createAskWatch(peek, () => 0);
     watch.annotate(
       snapshot(
@@ -51,7 +55,7 @@ describe('createAskWatch', () => {
 
   it('reuses an answer for the cache time, then asks again', async () => {
     let now = 0;
-    const peek = vi.fn(async () => new Set<string>());
+    const peek = vi.fn(async () => new Map<string, string>());
     const watch = createAskWatch(peek, () => now);
     const snap = () => snapshot(machine('danh1', [{ name: 'fix', idleSeconds: 300 }]));
     watch.annotate(snap());
@@ -67,7 +71,7 @@ describe('createAskWatch', () => {
   });
 
   it('starts one peek at a time per machine, and a failed peek means "not asking"', async () => {
-    const peek = vi.fn(() => new Promise<Set<string>>((_, reject) => setTimeout(() => reject(new Error('ssh down')), 5)));
+    const peek = vi.fn(() => new Promise<Map<string, string>>((_, reject) => setTimeout(() => reject(new Error('ssh down')), 5)));
     const watch = createAskWatch(peek, () => 0);
     const snap = () => snapshot(machine('danh1', [{ name: 'fix', idleSeconds: 300 }]));
     watch.annotate(snap());
@@ -78,7 +82,7 @@ describe('createAskWatch', () => {
   });
 
   it('forgets a session that has started working again', async () => {
-    const watch = createAskWatch(async () => new Set(['fix']), () => 0);
+    const watch = createAskWatch(async () => new Map([['fix', 'Which?']]), () => 0);
     watch.annotate(snapshot(machine('danh1', [{ name: 'fix', idleSeconds: 300 }])));
     await flush();
     expect(askingOf(watch.annotate(snapshot(machine('danh1', [{ name: 'fix', idleSeconds: 2 }]))), 'danh1')).toEqual([]);

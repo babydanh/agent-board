@@ -13,6 +13,13 @@ const CLOUD_OTHER_NAME = 'Cloud khác';
 
 /** A cloud session active within this many seconds is working; later it rests. */
 const WORKING_WITHIN_S = 60;
+/** A resting session stays "just finished" (waiting to be looked at) this long; after that it is simply free. */
+const FINISHED_WITHIN_S = 30 * 60;
+
+function activityState(idleSeconds: number): 'working' | 'done' | 'idle' {
+  if (idleSeconds < WORKING_WITHIN_S) return 'working';
+  return idleSeconds < FINISHED_WITHIN_S ? 'done' : 'idle';
+}
 /** What the board says when a sleeping row's machine is paused; the button that starts it shows only under exactly this text. */
 export function pausedMachineNotice(machine: string): string {
   return `Máy ${machine} đang tạm dừng (hub không nhận tin từ máy hơn 10 phút).`;
@@ -102,7 +109,7 @@ type CloudRepo = FleetMachineSnapshot['repos'][number];
 interface CloudRow {
   readonly machine: string;
   readonly session: string;
-  readonly state: 'working' | 'idle' | 'sleeping';
+  readonly state: 'working' | 'done' | 'idle' | 'sleeping';
   readonly branch?: string;
   readonly path?: string;
   readonly repos: readonly CloudRepo[];
@@ -110,6 +117,8 @@ interface CloudRow {
   readonly starting?: boolean;
   /** The session's pane shows a menu waiting for the user's choice. */
   readonly asking?: boolean;
+  /** What that menu asks, as one line. */
+  readonly question?: string;
   /** The user's last prompts to it, newest first. */
   readonly recentRequests?: readonly string[];
 }
@@ -130,10 +139,10 @@ function liveRows(machines: readonly FleetMachineSnapshot[]): CloudRow[] {
       return {
         machine: machine.agentId,
         session: session.name,
-        state: !reachable ? ('sleeping' as const) : session.idleSeconds < WORKING_WITHIN_S ? ('working' as const) : ('idle' as const),
+        state: !reachable ? ('sleeping' as const) : activityState(session.idleSeconds),
         repos,
         ...(!reachable ? { lastSeen: machine.receivedAt } : {}),
-        ...(reachable && session.asking === true ? { asking: true } : {}),
+        ...(reachable && session.asking === true ? { asking: true, ...(session.question === undefined ? {} : { question: session.question }) } : {}),
         ...(reachable && session.recentRequests !== undefined && session.recentRequests.length > 0 ? { recentRequests: session.recentRequests } : {}),
         ...(session.branch ? { branch: session.branch } : {}),
         ...(path ? { path } : {}),
@@ -213,6 +222,8 @@ export function cloudTreeNodes(input: {
   const sessionNode = (row: CloudRow, parentId: string): ProjectTreeNode => {
     const id = cloudNodeId(row.machine, row.session);
     const where = [row.machine, row.branch].filter((part) => part !== undefined).join(' · ');
+    // A session on a menu shows what it asks where the row would show the user's last prompt.
+    const lastRequest = row.asking === true && row.question !== undefined ? `Đang hỏi: ${row.question}` : row.recentRequests?.[0];
     return {
       id,
       parentId,
@@ -222,7 +233,8 @@ export function cloudTreeNodes(input: {
       // A session on a menu waits on the user, like a blocked local agent: its face asks "?".
       state: row.asking === true ? 'waiting_input' : row.state,
       request: row.starting ? `đang khởi động trên ${row.machine}` : where,
-      ...(row.recentRequests === undefined ? {} : { recentRequests: [...row.recentRequests], lastRequest: row.recentRequests[0] }),
+      ...(row.recentRequests === undefined ? {} : { recentRequests: [...row.recentRequests] }),
+      ...(lastRequest === undefined ? {} : { lastRequest }),
       ...(row.branch ? { branch: row.branch } : {}),
       ...(row.path ? { path: row.path } : {}),
       ...(row.state === 'sleeping' && row.lastSeen !== undefined ? { stoppedAt: new Date(row.lastSeen).toISOString() } : {}),

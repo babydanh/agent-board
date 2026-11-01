@@ -409,19 +409,19 @@ export class CloudControl {
   }
 
   /**
-   * The sessions of `machine` whose pane shows a menu waiting for the user. Reads only: it never starts or wakes the
-   * machine (a sleeping one has nothing asking), and any failure reads as "none asking".
+   * The sessions of `machine` whose pane shows a menu waiting for the user, each with what it asks. Reads only: it never
+   * starts or wakes the machine (a sleeping one has nothing asking), and any failure reads as "none asking".
    */
-  async peekAsking(machine: string, sessions: readonly string[]): Promise<Set<string>> {
-    if (!FLEET_MACHINE_NAME.test(machine) || !sessions.every((name) => FLEET_SESSION_NAME.test(name))) return new Set();
+  async peekAsking(machine: string, sessions: readonly string[]): Promise<Map<string, string>> {
+    if (!FLEET_MACHINE_NAME.test(machine) || !sessions.every((name) => FLEET_SESSION_NAME.test(name))) return new Map();
     try {
       const home = await this.#accountFor(machine);
       const result = await this.deps.run(['exec', machine, '--timeout', String(FLEET_ASK_PEEK_TIMEOUT_S), '--', PANE_PEEK_SCRIPT], home);
-      if (result.code !== 0) return new Set();
+      if (result.code !== 0) return new Map();
       const wanted = new Set(sessions);
-      return new Set([...parsePanePeek(result.stdout)].filter((name) => wanted.has(name)));
+      return new Map([...parsePanePeek(result.stdout)].filter(([name]) => wanted.has(name)));
     } catch {
-      return new Set();
+      return new Map();
     }
   }
 

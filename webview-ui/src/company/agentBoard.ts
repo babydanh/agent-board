@@ -212,22 +212,26 @@ export function buildAgentCards(
   return cards.sort(compareAgentCards);
 }
 
-/** The lane and tone a cloud session's tree state shows; null for a sleeping or unknown one, which is not work in progress. */
-const CLOUD_LANE_BY_STATE: Readonly<Record<string, { lane: CompanyLaneId; tone: AgentTone }>> = {
+/**
+ * The lane and tone a cloud session's tree state shows. A free (idle) session, a sleeping one and an unknown one are not
+ * work in progress, so they are not cards, as a free herdr pane is not.
+ */
+const CLOUD_LANE_BY_STATE: Readonly<Record<string, { lane: CompanyLaneId; tone: AgentTone | HerdrTone }>> = {
   working: { lane: 'running', tone: 'working' },
   waiting_input: { lane: 'needs_input', tone: 'needs' },
-  idle: { lane: 'review', tone: 'idle' },
+  done: { lane: 'done', tone: 'done' },
 };
 
 const CLOUD_STATUS_LABELS: Readonly<Record<string, string>> = {
   working: HERDR_TONE_LABELS.working,
   waiting_input: HERDR_TONE_LABELS.needs,
-  idle: 'đã dừng, chờ xem',
+  done: 'vừa xong, chờ xem',
 };
 
 /**
  * The cloud sessions of the Project tree as agent cards, so the board shows them as it shows a local agent:
- * working in Đang làm, waiting on a menu in Chờ bạn, stopped in Kiểm. A sleeping session is not a card.
+ * working in Đang làm, waiting on a menu in Chờ bạn (with what it asks), just finished in Xong. A free or sleeping
+ * session is not a card.
  */
 export function cloudAgentCards(nodes: readonly ProjectTreeNode[]): AgentBoardCard[] {
   const cards: AgentBoardCard[] = [];
@@ -246,7 +250,7 @@ export function cloudAgentCards(nodes: readonly ProjectTreeNode[]): AgentBoardCa
       statusLabel: CLOUD_STATUS_LABELS[node.state] ?? node.state,
       branch: node.branch ?? null,
       checkout: null,
-      activity: null,
+      activity: node.lastRequest ?? null,
       updatedAt: null,
     });
   }

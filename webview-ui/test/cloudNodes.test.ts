@@ -39,8 +39,8 @@ describe('cloudTreeNodes', () => {
   it('shows a session that waits on a menu as waiting for you, so its face asks "?"', () => {
     const live = machine({
       tmuxSessions: [
-        { name: 'ask', attached: false, idleSeconds: 300, asking: true },
-        { name: 'quiet', attached: false, idleSeconds: 300 },
+        { name: 'ask', attached: false, idleSeconds: 300, asking: true, question: 'Which database? — 1. Postgres / 2. SQLite' },
+        { name: 'quiet', attached: false, idleSeconds: 2 * 3600 },
       ],
     });
     const sessions = cloudTreeNodes({ ...base, machines: [live] }).filter((node) => node.kind === 'session');
@@ -48,6 +48,8 @@ describe('cloudTreeNodes', () => {
     expect(byName('ask')?.state).toBe('waiting_input');
     expect(sessionFaceMood(byName('ask')!)).toBe('waiting');
     expect(byName('quiet')?.state).toBe('idle');
+    // TC-CLOUD-ASK-05: the row says what the session asks.
+    expect(byName('ask')?.lastRequest).toBe('Đang hỏi: Which database? — 1. Postgres / 2. SQLite');
   });
 
   it('shows the sessions of a machine that stopped reporting as asleep, not as idle with a terminal that cannot open', () => {
@@ -69,8 +71,8 @@ describe('cloudTreeNodes', () => {
     expect(session?.agentKind).toBeUndefined();
   });
 
-  it('shows an idle session as resting and keeps its machine on the summary line', () => {
-    const idle = machine({ tmuxSessions: [{ name: 'old', attached: false, idleSeconds: 900, branch: 'cloud/danh-old' }], repos: [repo(REPOS[2], 'cloud/danh-old')] });
+  it('shows a session that stopped a while ago as resting and keeps its machine on the summary line', () => {
+    const idle = machine({ tmuxSessions: [{ name: 'old', attached: false, idleSeconds: 3 * 3600, branch: 'cloud/danh-old' }], repos: [repo(REPOS[2], 'cloud/danh-old')] });
     const session = cloudTreeNodes({ ...base, machines: [idle] }).find((node) => node.kind === 'session');
     expect(session?.state).toBe('idle');
     expect(session?.request).toContain('danh');
@@ -80,7 +82,14 @@ describe('cloudTreeNodes', () => {
   it('calls a session working until a full minute has passed without activity', () => {
     const at = (idleSeconds: number) => cloudTreeNodes({ ...base, machines: [machine({ tmuxSessions: [{ name: 's', attached: false, idleSeconds }] })] }).find((node) => node.kind === 'session')?.state;
     expect(at(59)).toBe('working');
-    expect(at(60)).toBe('idle');
+    expect(at(60)).toBe('done');
+  });
+
+  it('TC-CLOUD-STATE-01 calls a session just finished for half an hour after it stopped, then free', () => {
+    const at = (idleSeconds: number) => cloudTreeNodes({ ...base, machines: [machine({ tmuxSessions: [{ name: 's', attached: false, idleSeconds }] })] }).find((node) => node.kind === 'session');
+    expect(at(30 * 60 - 1)?.state).toBe('done');
+    expect(sessionFaceMood(at(30 * 60 - 1)!)).toBe('done');
+    expect(at(30 * 60)?.state).toBe('idle');
   });
 
   it('uses the same tree builder as local sessions, so the row lands under its folder', () => {

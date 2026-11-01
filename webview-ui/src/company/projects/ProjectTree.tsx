@@ -59,6 +59,7 @@ const SESSION_STATE_LABEL: Readonly<Record<string, string>> = {
   waiting_input: 'chờ bạn',
   blocked: 'chờ bạn',
   idle: 'rảnh',
+  done: 'vừa xong',
   sleeping: 'ngủ',
   ended: 'đã tắt',
 };

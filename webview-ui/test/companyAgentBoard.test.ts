@@ -293,18 +293,21 @@ function cloudNode(overrides: Partial<ProjectTreeNode> & { id: string }): Projec
 }
 
 describe('cloud sessions as agent cards', () => {
-  it('puts a working one in Đang làm, a menu-asking one in Chờ bạn and an idle one in Kiểm', () => {
+  it('puts a working one in Đang làm, a menu-asking one in Chờ bạn and one that just finished in Xong; a free one is no card', () => {
     const cards = cloudAgentCards([
       cloudNode({ id: 'cloud:danh1/work', name: 'work', state: 'working', branch: 'cloud/danh1-work' }),
-      cloudNode({ id: 'cloud:danh1/ask', name: 'ask', state: 'waiting_input' }),
+      cloudNode({ id: 'cloud:danh1/ask', name: 'ask', state: 'waiting_input', lastRequest: 'Đang hỏi: Which database?' }),
+      cloudNode({ id: 'cloud:danh1/fin', name: 'fin', state: 'done' }),
       cloudNode({ id: 'cloud:danh1/rest', name: 'rest', state: 'idle' }),
     ]);
 
     expect(laneByKey(cards)).toEqual({
       'cloud:danh1/work': 'running',
       'cloud:danh1/ask': 'needs_input',
-      'cloud:danh1/rest': 'review',
+      'cloud:danh1/fin': 'done',
     });
+    // TC-CLOUD-STATE-02: the waiting card says what it asks.
+    expect(cards.find((card) => card.key === 'cloud:danh1/ask')?.activity).toBe('Đang hỏi: Which database?');
     expect(cards.find((card) => card.key === 'cloud:danh1/work')).toMatchObject({
       subject: { kind: 'cloud', machine: 'danh1', session: 'work' },
       tag: 'cloud',

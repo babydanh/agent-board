@@ -6580,6 +6580,10 @@ components:
         asking:
           type: boolean
           description: The pane shows a menu waiting for the user's choice (a Claude permission prompt or question), read from the bottom of the tmux pane. Absent when it does not, or was not read.
+        question:
+          type: string
+          maxLength: 300
+          description: What that menu asks, as one line (the question, then its numbered options). Present only with `asking`.
         recentRequests:
           type: array
           maxItems: 5
