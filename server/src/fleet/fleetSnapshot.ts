@@ -50,19 +50,37 @@ function formatRanges(ranges: Ranges): string {
   return ranges.map(([s, e]) => (s === e ? `${s}` : `${s}–${e}`)).join(', ');
 }
 
+interface OverlapEntry {
+  /** Display name: the folder name on the first machine that touched the file. */
+  readonly repo: string;
+  readonly path: string;
+  readonly touches: Map<string, Touch>;
+  /** Lower-cased folder names seen for this repository; the local ledger only knows these. */
+  readonly aliases: Set<string>;
+  /** Reported `origin/main` commits per machine. */
+  readonly bases: Map<string, Set<string>>;
+  local: boolean;
+}
+
 export function computeFleetOverlaps(
   machines: readonly FleetHubMachine[],
   localRepos: readonly FleetLocalRepo[],
 ): FleetOverlapWarning[] {
-  const entries = new Map<string, { repo: string; path: string; touches: Map<string, Touch>; local: boolean }>();
-  const touch = (repoName: string, file: string, machine: string, ranges: Ranges | null) => {
+  const entries = new Map<string, OverlapEntry>();
+  const touch = (repo: FleetHubRepo, repoName: string, file: string, machine: string, ranges: Ranges | null) => {
     const path = normalizeRelativePath(file);
     if (path === '') return;
-    const key = overlapKey(repoName, path);
+    const key = overlapKey(repoIdentity(repo), path);
     let entry = entries.get(key);
     if (entry === undefined) {
-      entry = { repo: repoName, path, touches: new Map(), local: false };
+      entry = { repo: repoName, path, touches: new Map(), aliases: new Set(), bases: new Map(), local: false };
       entries.set(key, entry);
+    }
+    entry.aliases.add(repoName.toLowerCase());
+    if (repo.origin_main) {
+      const bases = entry.bases.get(machine) ?? new Set<string>();
+      bases.add(repo.origin_main);
+      entry.bases.set(machine, bases);
     }
     const previous = entry.touches.get(machine);
     // Line data wins over a bare file mention; two line lists for one machine are merged.
@@ -77,17 +95,20 @@ export function computeFleetOverlaps(
     for (const repo of machine.repos) {
       const repoName = hubRepoName(repo);
       if (repoName === '') continue;
-      for (const change of repo.changes ?? []) touch(repoName, change.path, machine.agent_id, change.ranges);
-      for (const file of repo.dirty_files) touch(repoName, file, machine.agent_id, null);
+      for (const change of repo.changes ?? []) touch(repo, repoName, change.path, machine.agent_id, change.ranges);
+      for (const file of repo.dirty_files) touch(repo, repoName, file, machine.agent_id, null);
     }
   }
 
+  // The local ledger has no GitHub identity, so it is matched by folder name against each entry's aliases.
   for (const repo of localRepos) {
-    const repoName = repositoryName(repo.repo);
-    if (repoName === '') continue;
+    const alias = repositoryName(repo.repo).toLowerCase();
+    if (alias === '') continue;
     for (const file of repo.dirtyFiles) {
-      const entry = entries.get(overlapKey(repoName, normalizeRelativePath(file)));
-      if (entry !== undefined) entry.local = true;
+      const path = normalizeRelativePath(file).toLowerCase();
+      for (const entry of entries.values()) {
+        if (entry.path.toLowerCase() === path && entry.aliases.has(alias)) entry.local = true;
+      }
     }
   }
 
@@ -108,12 +129,16 @@ export function computeFleetOverlaps(
     const withLocal = entry.local && touches.length > 0;
     if (clashing.size === 0 && !withLocal) continue;
     const involved = clashing.size > 0 ? touches.filter((t) => clashing.has(t.machine)) : touches;
+    // Line numbers only mean the same thing against the same base, so a base difference forces file level.
+    const bases = new Set(involved.flatMap((t) => [...(entry.bases.get(t.machine) ?? [])]));
+    const baseDiffers = bases.size > 1;
     warnings.push({
       repo: entry.repo,
       path: entry.path,
       machines: involved.map((t) => t.machine).sort(),
       local: entry.local,
-      level: clashing.size > 0 && lineLevel ? 'line' : 'file',
+      level: clashing.size > 0 && lineLevel && !baseDiffers ? 'line' : 'file',
+      ...(baseDiffers ? { baseDiffers: true } : {}),
       detail: involved
         .filter((t) => t.ranges !== null)
         .map((t) => `${t.machine}: dòng ${formatRanges(t.ranges as Ranges)}`)
@@ -239,6 +264,11 @@ export function buildFleetSnapshot(
 
 function hubRepoName(repo: FleetHubRepo): string {
   return typeof repo.repo === 'string' && repo.repo !== '' ? repo.repo : repositoryName(repo.path);
+}
+
+/** GitHub identity (lower-cased HOST/OWNER/REPO) when the lane reports one, else its folder name. */
+function repoIdentity(repo: FleetHubRepo): string {
+  return (typeof repo.github_repo === 'string' && repo.github_repo !== '' ? repo.github_repo : hubRepoName(repo)).toLowerCase();
 }
 
 function repositoryName(path: string): string {
