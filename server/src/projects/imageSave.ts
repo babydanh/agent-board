@@ -14,6 +14,7 @@ import * as path from 'node:path';
 
 import type { ProjectImageSaveMessage } from '../../../core/src/messages.js';
 import { LAYOUT_FILE_DIR } from '../constants.js';
+import { IMAGE_UPLOAD_KEEP_DAYS } from '../fleet/imageUpload.js';
 import { LibraryUserError } from '../library/libraryError.js';
 
 /** Largest image the box keeps, decoded: 10 MiB. */
@@ -64,5 +65,22 @@ export async function savePromptImage(
   const stamp = now.toISOString().slice(0, 19).replace(/[-:T]/g, '');
   const file = path.join(dir, `${stamp}-${randomUUID().slice(0, 8)}.${extension}`);
   await fs.writeFile(file, bytes);
+  await pruneOldImages(dir, now);
   return file;
+}
+
+const SAVED_IMAGE_NAME = /^\d{14}-[0-9a-f]{8}\.(?:png|jpg|gif|webp)$/;
+
+/** Removes images this board saved more than IMAGE_UPLOAD_KEEP_DAYS ago; other files stay, and a failure never fails the save. */
+async function pruneOldImages(dir: string, now: Date): Promise<void> {
+  const cutoff = now.getTime() - IMAGE_UPLOAD_KEEP_DAYS * 24 * 60 * 60 * 1000;
+  try {
+    for (const name of await fs.readdir(dir)) {
+      if (!SAVED_IMAGE_NAME.test(name)) continue;
+      const file = path.join(dir, name);
+      if ((await fs.stat(file)).mtimeMs < cutoff) await fs.rm(file, { force: true });
+    }
+  } catch (error) {
+    console.warn('[Pixel Agents] Could not prune old prompt images:', error);
+  }
 }

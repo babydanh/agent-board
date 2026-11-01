@@ -29,6 +29,23 @@ describe('savePromptImage', () => {
     expect((await fs.readFile(file)).toString('base64')).toBe(PNG);
   });
 
+  it('removes saved images older than a week when it saves a new one, and leaves other files', async () => {
+    const dir = await tempDir();
+    const old = path.join(dir, '20200101000000-aaaaaaaa.png');
+    const recent = path.join(dir, '20261015000000-bbbbbbbb.png');
+    const other = path.join(dir, 'notes.txt');
+    for (const file of [old, recent, other]) await fs.writeFile(file, 'x');
+    const now = new Date('2026-10-21T10:05:06Z');
+    const ancient = new Date('2020-01-01T00:00:00Z');
+    await fs.utimes(old, ancient, ancient);
+    await fs.utimes(other, ancient, ancient);
+    await fs.utimes(recent, new Date('2026-10-15T00:00:00Z'), new Date('2026-10-15T00:00:00Z'));
+
+    const saved = await savePromptImage({ mediaType: 'image/png', dataBase64: PNG }, dir, now);
+
+    expect((await fs.readdir(dir)).sort()).toEqual([path.basename(recent), 'notes.txt', path.basename(saved)].sort());
+  });
+
   it('refuses a type it does not keep, a payload that is not base64, and one over the limit', async () => {
     const dir = await tempDir();
     const save = (request: { mediaType: string; dataBase64: string }) =>
