@@ -369,6 +369,20 @@ describe('project session start', () => {
     expect(services.openChat).toHaveBeenCalledWith(expect.objectContaining({ cwd: path.join(root, 'repo.worktrees', 'sua-loi-dang-nhap') }));
   });
 
+  it('TC-STARTLOG-05 reports each stage it enters, in order, skipping the ones it does not run', async () => {
+    const stages = async (services: ReturnType<typeof createServices>, worktree: 'separate' | 'shared') => {
+      const seen: string[] = [];
+      await startProjectSession(request('claude', worktree), deps(services), (stage) => seen.push(stage));
+      return seen;
+    };
+    expect(await stages(createServices(), 'separate')).toEqual(['worktree', 'launch']);
+    const withScript = createServices({
+      effectiveSettings: vi.fn(async () => ({ worktreePrepare: { argv: ['npm', 'install'], timeoutMs: 1 } })),
+    });
+    expect(await stages(withScript, 'separate')).toEqual(['worktree', 'setup', 'launch']);
+    expect(await stages(createServices(), 'shared')).toEqual(['launch']);
+  });
+
 
   it('normalizes task names to safe path slugs', () => {
     expect(taskSlug('../../ A/B !!!')).toBe('a-b');

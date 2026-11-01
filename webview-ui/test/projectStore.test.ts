@@ -158,3 +158,30 @@ describe('waiting for a wake', () => {
     await expect(woken).resolves.toEqual({ target: { boardSessionId: 'board-1', folder: 'V:/f' } });
   });
 });
+
+describe('project store session progress', () => {
+  const progress = (requestId: string, stage: 'worktree' | 'setup' | 'launch'): ServerMessage =>
+    ({ type: 'projectSessionProgress', requestId, stage }) as ServerMessage;
+
+  it('TC-STARTLOG-06 keeps the stages of a pending start, drops them once it is answered, and ignores strangers', () => {
+    const store = createProjectStore({ send: () => undefined, newRequestId: () => 'r1' });
+    store.startSession({ nodeId: 'n', engine: 'claude', worktree: 'separate', taskName: 't', initialPrompt: '' });
+    store.accept(progress('other', 'worktree'));
+    expect(store.getSnapshot().progress).toEqual({});
+    store.accept(progress('r1', 'worktree'));
+    store.accept(progress('r1', 'launch'));
+    expect(store.getSnapshot().progress).toEqual({ r1: ['worktree', 'launch'] });
+    store.accept({ type: 'projectSessionStartResult', requestId: 'r1', ok: true, sessionId: 's', checkout: '/c' } as ServerMessage);
+    expect(store.getSnapshot().progress).toEqual({});
+  });
+
+  it('TC-STARTLOG-10 forgets the stages of a start that a newer start replaced', () => {
+    let next = 0;
+    const store = createProjectStore({ send: () => undefined, newRequestId: () => `r${++next}` });
+    const start = () => store.startSession({ nodeId: 'n', engine: 'claude', worktree: 'separate', taskName: 't', initialPrompt: '' });
+    start();
+    store.accept(progress('r1', 'worktree'));
+    start();
+    expect(store.getSnapshot().progress).toEqual({});
+  });
+});

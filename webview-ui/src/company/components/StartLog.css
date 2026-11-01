@@ -1,0 +1,62 @@
+.start-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.start-log__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.start-log__step[data-state='done'] {
+  color: var(--color-text);
+}
+
+.start-log__step[data-state='active'] {
+  color: var(--color-accent);
+}
+
+/* Grey bars where the terminal will be; a light band sweeps across them with transform only. */
+.start-log__bones {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.start-log__bone {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--color-well);
+}
+
+.start-log__bone::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--color-text-muted), transparent);
+  opacity: 0.18;
+  transform: translateX(-100%);
+  animation: start-log-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes start-log-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-log__bone::after {
+    animation: none;
+  }
+}

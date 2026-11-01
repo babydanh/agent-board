@@ -45,6 +45,7 @@ const HERDR_KEY_SET: Record<HerdrKey, true> = {
   enter: true,
   esc: true,
   tab: true,
+  'shift+tab': true,
   'ctrl+c': true,
   '1': true,
   '2': true,

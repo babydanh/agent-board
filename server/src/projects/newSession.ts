@@ -2,6 +2,7 @@ import * as path from 'node:path';
 
 import { type BoardAgentEngine, type HerdrAgentEngine, isEngineForLaunch, type WrapperAgentEngine } from '../../../core/src/agentEngines.js';
 import type {
+  ProjectSessionProgressMessage,
   ProjectSessionStartMessage,
   ProjectSessionStartResultMessage,
   ProjectSettingsValues,
@@ -60,6 +61,8 @@ export interface ProjectSessionServices {
 export async function startProjectSession(
   request: ProjectSessionStartMessage,
   deps: ProjectModuleDeps<ProjectSessionServices>,
+  /** Told each stage as the start enters it; a stage this request does not run is never reported. */
+  report: (stage: ProjectSessionProgressMessage['stage']) => void = () => undefined,
 ): Promise<ProjectSessionStartResultMessage> {
   if (request.taskName.trim() === '') throw new LibraryUserError('Hãy nhập tên việc.');
   // Every engine opens an interactive session the user types into; a first prompt is optional.
@@ -98,6 +101,7 @@ export async function startProjectSession(
       : undefined;
   const running = name === undefined ? undefined : sameSession(deps.services.findAgent(name));
   if (running !== undefined) return opened(request, running.paneId, running.cwd);
+  if (request.worktree === 'separate') report('worktree');
   const checkout = request.worktree === 'shared'
     ? sharedCheckout
     : (await createProjectSessionWorktree({
@@ -110,6 +114,7 @@ export async function startProjectSession(
     const settings = await deps.services.effectiveSettings(folder.id);
     const script = settings.worktreePrepare;
     if (script !== undefined) {
+      report('setup');
       const result = await deps.services.runSetupScript(script.argv, checkout, script.timeoutMs);
       if (result.code !== 0) {
         throw new LibraryUserError(`Script chuẩn bị worktree thất bại: ${result.stderr.trim() || `mã ${result.code}`}`);
@@ -117,6 +122,7 @@ export async function startProjectSession(
     }
   }
 
+  report('launch');
   let sessionId: string;
   try {
     if (request.engine === 'omp') {

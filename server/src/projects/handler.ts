@@ -229,7 +229,8 @@ async function runProjectRequest(
         return;
       case 'projectSessionStart': {
         const deps = depsFor(store, context, context.services?.session);
-        const result = await startProjectSession(msg as unknown as ProjectSessionStartMessage, deps);
+        const result = await startProjectSession(msg as unknown as ProjectSessionStartMessage, deps, (stage) =>
+          send({ type: 'projectSessionProgress', requestId, stage }));
         send({ ...result, requestId });
         await sendTreeSnapshot(requestId, send, store, context);
         return;

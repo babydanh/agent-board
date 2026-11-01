@@ -177,6 +177,7 @@ components:
         - $ref: '#/components/schemas/ProjectSettingsMessage'
         - $ref: '#/components/schemas/ProjectCommandResultMessage'
         - $ref: '#/components/schemas/ProjectSessionStartResultMessage'
+        - $ref: '#/components/schemas/ProjectSessionProgressMessage'
         - $ref: '#/components/schemas/ProjectImageSavedMessage'
         - $ref: '#/components/schemas/ProjectMergePreviewResultMessage'
         - $ref: '#/components/schemas/ProjectBranchCompareMessage'
@@ -5663,7 +5664,7 @@ components:
     HerdrKey:
       type: string
       description: The keys the board lets a person press in a herdr agent's UI.
-      enum: [up, down, left, right, enter, esc, tab, ctrl+c, '1', '2', '3', y, n]
+      enum: [up, down, left, right, enter, esc, tab, shift+tab, ctrl+c, '1', '2', '3', y, n]
 
     HerdrFocusMessage:
       type: object
@@ -9515,6 +9516,21 @@ components:
         reason:
           type: string
           description: Vietnamese refusal or failure reason.
+
+    ProjectSessionProgressMessage:
+      type: object
+      description: A new session's start entered a stage; sent before its projectSessionStartResult so the board can show where a slow start is.
+      additionalProperties: false
+      required: [type, requestId, stage]
+      properties:
+        type:
+          const: projectSessionProgress
+        requestId:
+          type: string
+          format: uuid
+        stage:
+          type: string
+          enum: [worktree, setup, launch]
 
     ProjectTreeEngine:
       anyOf:

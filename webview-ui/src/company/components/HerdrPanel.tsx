@@ -16,11 +16,20 @@ import type { HerdrKey } from '../../../../core/src/messages.js';
 import { failureNotice } from '../commandResults.js';
 import type { CompanyClient, CompanyCommandHandle } from '../companyClient.js';
 import type { CompanyViewState } from '../companyState.js';
-import { HERDR_CHOICE_KEYS, HERDR_DRAWER_TAB_LABELS, type HerdrDrawerTab, missingPaneView } from '../herdrView.js';
+import {
+  HERDR_CHOICE_KEYS,
+  HERDR_DRAWER_TAB_LABELS,
+  type HerdrDrawerTab,
+  missingPaneView,
+  paneStartSteps,
+  PERMISSION_MODE_CHOICES,
+  permissionModeLabel,
+} from '../herdrView.js';
 import { formatLogTime } from '../sessionLogView.js';
 import { clipRuleRows, MONO_CHAR_EM, screenFitPx, type ScreenLine } from '../terminalScreen.js';
 import { useCoalescedFrame } from '../useCoalescedFrame.js';
 import { useHerdrScreenWatch } from '../useHerdrScreenWatch.js';
+import { useModePicker } from '../useModePicker.js';
 import { useNow } from '../useNow.js';
 import { useParsedScreen } from '../useParsedScreen.js';
 import { useScreenSelection } from '../useScreenSelection.js';
@@ -31,6 +40,7 @@ import { CompanyButton } from './CompanyButton.js';
 import { PetLoader } from './PetLoader.js';
 import { ScreenFreezeChip } from './ScreenFrame.js';
 import { ScreenView } from './ScreenView.js';
+import { StartLog } from './StartLog.js';
 
 const HERDR_TABS = ['screen', 'info'] as const satisfies readonly HerdrDrawerTab[];
 
@@ -98,12 +108,21 @@ export function HerdrPanel({ client, state, paneId, tab, onTabChange, starting =
     track(client.herdrKeys(paneId, [key]));
   }
 
+  const mode = screen ? permissionModeLabel(screen.text) : null;
+  const modePicker = useModePicker(
+    mode,
+    screen !== undefined,
+    () => sendKey('shift+tab'),
+    (target) => setLocalNotice(`Không chuyển được sang chế độ ${target ?? 'mặc định'}: phiên này không có chế độ đó trong vòng Shift+Tab, hoặc Claude đang bận.`),
+  );
+
   if (agent === undefined) {
     const missing = missingPaneView(starting, now - openedAt);
     if (missing.loading) {
       return (
-        <div data-testid="herdr-pane-starting" className="flex flex-1 items-center justify-center">
+        <div data-testid="herdr-pane-starting" className="flex flex-1 flex-col items-center justify-center">
           <PetLoader text={missing.text} />
+          <StartLog steps={paneStartSteps(false, false)} since={openedAt} />
         </div>
       );
     }
@@ -162,10 +181,31 @@ export function HerdrPanel({ client, state, paneId, tab, onTabChange, starting =
             </div>
           )}
 
+          {agent.kind === 'claude' && screen && (
+            // The CLI only cycles modes (Shift+Tab): the picker presses it until the footer shows the chosen one.
+            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Chế độ quyền của Claude Code" aria-busy={modePicker.busy}>
+              {PERMISSION_MODE_CHOICES.map((choice) => (
+                <CompanyButton
+                  key={choice.label ?? 'default'}
+                  size="sm"
+                  variant={choice.label === mode ? 'accent' : 'default'}
+                  aria-pressed={choice.label === mode}
+                  // aria-disabled, not disabled: a disabled button drops the keyboard focus it was just given.
+                  aria-disabled={modePicker.busy}
+                  onClick={() => { if (!modePicker.busy) modePicker.choose(choice.label); }}
+                >
+                  {choice.label ?? 'Mặc định'}
+                </CompanyButton>
+              ))}
+            </div>
+          )}
+
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
             {frozen && <ScreenFreezeChip />}
             {screen ? (
               <HerdrScreenView lines={screenLines} preRef={screenRef} />
+            ) : starting ? (
+              <StartLog steps={paneStartSteps(true, false)} since={openedAt} />
             ) : (
               <p className="rounded-(--company-radius-sm) bg-well p-2 text-2xs text-text-muted">
                 Chưa đọc màn hình.

@@ -5,6 +5,8 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AGENT_ENGINES, type ProjectSessionEngine } from '../../../../core/src/agentEngines.js';
 import type { ProjectTreeNode } from '../../../../core/src/messages.js';
 import { PetLoader } from '../components/PetLoader.js';
+import { StartLog } from '../components/StartLog.js';
+import { sessionRequestSteps } from '../herdrView.js';
 import { foldersUnder } from './projectNodeTargets.js';
 import { type ProjectStore, useProjectState } from './projectStore.js';
 
@@ -169,7 +171,12 @@ export function NewSessionDialog({ store, nodeId, onClose, initialEngine, onStar
         </details>
         {plainFolder && <p className="project-session-dialog__path">Thư mục này không phải repo git: phiên omp chạy ngay trong <code>{target?.path}</code>.</p>}
         {reason && <p role="alert" className="project-session-dialog__error">{reason}</p>}
-        {pending && <PetLoader text="Đang mở phiên…" />}
+        {pending && (
+          <>
+            <PetLoader text="Đang mở phiên…" />
+            <StartLog steps={sessionRequestSteps(workdir === 'separate' ? worktreePath : null, requestId === null ? [] : state.progress[requestId] ?? [])} bones={false} />
+          </>
+        )}
         {earlierStart && <p role="status">Phiên bấm mở lúc trước vẫn đang khởi động, chờ nó xong rồi hãy mở phiên khác.</p>}
         {opened !== undefined && <p role="status">Đã mở phiên tại <code>{opened.checkout}</code></p>}
       </form>

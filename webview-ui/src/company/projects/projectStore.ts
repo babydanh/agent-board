@@ -16,6 +16,7 @@ import type {
   ProjectNodeDeleteMessage,
   ProjectNodeMoveMessage,
   ProjectNodeUpdateMessage,
+  ProjectSessionProgressMessage,
   ProjectSessionStartMessage,
   ProjectSessionStartResultMessage,
   ProjectSessionStopMessage,
@@ -40,6 +41,7 @@ export type ProjectServerMessage =
   | ProjectSettingsMessage
   | ProjectCommandResultMessage
   | ProjectSessionStartResultMessage
+  | ProjectSessionProgressMessage
   | ProjectImageSavedMessage
   | ProjectBranchCompareMessage
   | ProjectMergePreviewResultMessage;
@@ -72,6 +74,8 @@ export interface ProjectState {
   pending: Readonly<Record<string, ProjectRequest>>;
   results: Readonly<Record<string, ProjectCommandResultMessage | ProjectSessionStartResultMessage | ProjectBranchCompareMessage | ProjectMergePreviewResultMessage | ProjectImageSavedMessage>>;
   errors: Readonly<Record<string, string>>;
+  /** The stages each pending session start has entered, in order; cleared when its result arrives. */
+  progress: Readonly<Record<string, readonly ProjectSessionProgressMessage['stage'][]>>;
 }
 export interface ProjectStoreOptions {
   send: (message: ClientMessage) => void;
@@ -119,23 +123,24 @@ function withoutSubtree(nodes: readonly ProjectTreeNode[], rootId: string): read
 }
 
 export function isProjectServerMessage(message: ServerMessage): message is ProjectServerMessage {
-  return message.type === 'projectTreeSnapshot' || message.type === 'projectDiff' || message.type === 'projectSettings' || message.type === 'projectCommandResult' || message.type === 'projectSessionStartResult' || message.type === 'projectMergePreviewResult' || message.type === 'projectBranchCompare' || message.type === 'projectImageSaved';
+  return message.type === 'projectTreeSnapshot' || message.type === 'projectDiff' || message.type === 'projectSettings' || message.type === 'projectCommandResult' || message.type === 'projectSessionStartResult' || message.type === 'projectSessionProgress' || message.type === 'projectMergePreviewResult' || message.type === 'projectBranchCompare' || message.type === 'projectImageSaved';
 }
 
 export function createProjectStore(options: ProjectStoreOptions): ProjectStore {
   const requestId = options.newRequestId ?? defaultRequestId;
   const restored = options.restoreNodes ?? [];
-  let state: ProjectState = { nodes: restored, treeComplete: restored.length > 0, treeStale: restored.length > 0, diff: null, settings: null, pending: {}, results: {}, errors: {} };
+  let state: ProjectState = { nodes: restored, treeComplete: restored.length > 0, treeStale: restored.length > 0, diff: null, settings: null, pending: {}, results: {}, errors: {}, progress: {} };
   const listeners = new Set<() => void>();
   const latest = new Map<string, string>();
   const commit = (next: ProjectState) => { if (next === state) return; state = next; for (const listener of listeners) listener(); };
   function transmit<T extends ProjectRequest>(request: T, key: string): string {
     const pending = { ...state.pending };
+    const progress = { ...state.progress };
     const prior = latest.get(key);
-    if (prior !== undefined) delete pending[prior];
+    if (prior !== undefined) { delete pending[prior]; delete progress[prior]; }
     pending[request.requestId] = request;
     latest.set(key, request.requestId);
-    commit({ ...state, pending, errors: { ...state.errors, [key]: '' } });
+    commit({ ...state, pending, progress, errors: { ...state.errors, [key]: '' } });
     try { options.send(request); } catch (error) {
       const nextPending = { ...state.pending }; delete nextPending[request.requestId];
       const errors = { ...state.errors, [key]: error instanceof Error ? error.message : String(error) };
@@ -176,17 +181,22 @@ export function createProjectStore(options: ProjectStoreOptions): ProjectStore {
     }
     const request = state.pending[message.requestId];
     if (request === undefined) return;
+    if (message.type === 'projectSessionProgress') {
+      commit({ ...state, progress: { ...state.progress, [message.requestId]: [...(state.progress[message.requestId] ?? []), message.stage] } });
+      return;
+    }
     const key = latestKey(request);
     if (latest.get(key) !== message.requestId) return;
     const pending = { ...state.pending }; delete pending[message.requestId]; latest.delete(key);
     const errors = { ...state.errors };
+    const progress = { ...state.progress }; delete progress[message.requestId];
     if ('reason' in message && message.reason) errors[key] = message.reason; else delete errors[key];
     // A confirmed delete leaves the tree at once: the quick snapshot that follows is ignored once a full tree is held.
     if (message.type === 'projectCommandResult' && message.command === 'delete' && message.ok && message.nodeId !== undefined) {
-      commit({ ...state, nodes: withoutSubtree(state.nodes, message.nodeId), results: { ...state.results, [message.requestId]: message }, pending, errors });
-    } else if (message.type === 'projectDiff') commit({ ...state, diff: message, pending, errors });
-    else if (message.type === 'projectSettings') commit({ ...state, settings: message, pending, errors });
-    else commit({ ...state, results: { ...state.results, [message.requestId]: message }, pending, errors });
+      commit({ ...state, nodes: withoutSubtree(state.nodes, message.nodeId), results: { ...state.results, [message.requestId]: message }, pending, errors, progress });
+    } else if (message.type === 'projectDiff') commit({ ...state, diff: message, pending, errors, progress });
+    else if (message.type === 'projectSettings') commit({ ...state, settings: message, pending, errors, progress });
+    else commit({ ...state, results: { ...state.results, [message.requestId]: message }, pending, errors, progress });
   }
   function latestKey(request: ProjectRequest): string {
     switch (request.type) {
