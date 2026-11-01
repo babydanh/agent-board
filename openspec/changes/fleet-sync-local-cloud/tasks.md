@@ -4,7 +4,7 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
 
 ## 0. P0 — identity, base and noise
 
-- [ ] 0.1 Measure lanes against the remote's default branch. Tiêu chí: `node --test fleet/agent.test.mjs` exit 0 with TC-BASE-DEFAULT-01 (default `master`, unrelated `main`, branch `stable` behind master → `changes` empty) and TC-BASE-DEFAULT-02 (pushed branch ahead 0 but not merged → changes kept); after deploy (0.6) the hub row for `flutter-3.47.9` shows `changes` length 0 on `danh` and `danh1`.
+- [x] 0.1 Measure lanes against the remote's default branch. Tiêu chí: `node --test fleet/agent.test.mjs` exit 0 with TC-BASE-DEFAULT-01 (default `master`, unrelated `main`, branch `stable` behind master → `changes` empty) and TC-BASE-DEFAULT-02 (pushed branch ahead 0 but not merged → changes kept); after deploy (0.6) the hub row for `flutter-3.47.9` shows `changes` length 0 on `danh` and `danh1`.
   - Files: sửa `fleet/agent.mjs` (`repoRow`-equivalent block near line 224 and `changedRanges` at line 154; resolve default branch from `origin/HEAD`, fallback `main`; use it for `merged`, `staged`, `origin_main`), `fleet/local-agent.mjs` (`repoRow` at line 60, same helper), test `fleet/agent.test.mjs`, `fleet/local-agent.test.mjs`.
   - Giao: `defaultBranch(path): string` exported from `fleet/agent.mjs` and reused by `fleet/local-agent.mjs`. Nhận: none.
   - Chủ file chung: 0.1 owns `fleet/agent.mjs` for P0; later tasks that touch it (1.x, 2.x) start after 0.1 is merged into this branch.
@@ -19,7 +19,7 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
   - Giao: `FleetOverlapWarning.baseDiffers?: boolean`. Nhận: `repoIdentity` from 0.2.
   - Chủ file chung: 0.3 owns `core/asyncapi.yaml` for P0; every later schema change (1.x, 2.x, 3.x) is a separate task that edits it one at a time, then regenerates.
   - Phụ thuộc: 0.2.
-- [ ] 0.4 Local reporter lists the shared project repositories. Tiêu chí: `node --test fleet/local-agent.test.mjs` exit 0 with TC-LOCALROOTS-01 (config roots expand to every worktree); after the user supplies the paths, `~/.pixel-agents/fleet-local.json` lists them and the hub row for `local-desktop-6g1153o` includes `babydanh/HethongBackendApi_QuanlyGiaiDau`.
+- [x] 0.4 Local reporter lists the shared project repositories. Tiêu chí: `node --test fleet/local-agent.test.mjs` exit 0 with TC-LOCALROOTS-01 (config roots expand to every worktree); after the user supplies the paths, `~/.pixel-agents/fleet-local.json` lists them and the hub row for `local-desktop-6g1153o` includes `babydanh/HethongBackendApi_QuanlyGiaiDau`.
   - Files: NGOÀI REPO `~/.pixel-agents/fleet-local.json` (data only, no secret); sửa `fleet/local-agent.test.mjs` only if a gap shows.
   - Giao: none. Nhận: the three repo paths from the user.
   - Chủ file chung: none. Phụ thuộc: 0.1.
