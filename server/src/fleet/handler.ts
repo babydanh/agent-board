@@ -14,6 +14,7 @@ import { CloudControl, CloudControlError } from './cloudControl.js';
 import {
   FLEET_REASON_BAD_INPUT,
   FLEET_REASON_COMMAND_FAILED,
+  FLEET_REASON_HUB_FALLBACK,
   FLEET_REASON_NO_MACHINE,
   FLEET_REASON_NO_TERMINAL,
   FLEET_REASON_NOT_REPORTED,
@@ -196,12 +197,14 @@ export function handleFleetMessage(
       const view = await localView;
       const unavailable = error instanceof FleetUnavailableError;
       const localGuard = context.getLocalGuard?.() ?? null;
-      if (localGuard !== null) {
-        const response = { now: Date.now(), machines: [] };
+      // A hub that answered an error (asleep, cooling down) still leaves the running machines readable over InstaBox.
+      const rescued = unavailable ? null : await cloudOf(context).readRunningTmux().catch(() => null);
+      if (localGuard !== null || rescued !== null) {
+        const response = rescued ?? { now: Date.now(), machines: [] };
         const snapshot = await snapshotWithPullRequests(requestId, response, view, localGuard, context);
         send({
           ...startBranchAnalysis(snapshot, view, response, context, send),
-          hubError: unavailable ? FLEET_REASON_UNAVAILABLE : FLEET_REASON_COMMAND_FAILED,
+          hubError: unavailable ? FLEET_REASON_UNAVAILABLE : rescued !== null ? FLEET_REASON_HUB_FALLBACK : FLEET_REASON_COMMAND_FAILED,
         });
         return;
       }

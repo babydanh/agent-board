@@ -6,6 +6,8 @@ export const FLEET_STALE_AFTER_MS = 10 * 60_000;
 export const FLEET_REASON_READ_ONLY = 'Kết nối chỉ đọc không được phép xem Cloud.';
 export const FLEET_REASON_UNAVAILABLE = 'Cloud chưa được cấu hình hoặc hiện không khả dụng.';
 export const FLEET_REASON_COMMAND_FAILED = 'Không thể tải dữ liệu Cloud từ hub.';
+export const FLEET_REASON_HUB_FALLBACK =
+  'Hub đang nghỉ, nên chỉ hiện phiên tmux của máy đang chạy (chưa có nhánh, repo); máy đang ngủ chưa hiện.';
 
 /** Same patterns as the AsyncAPI schema; checked again server-side before anything reaches a command line. */
 export const FLEET_MACHINE_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;

@@ -32,6 +32,7 @@ import {
 import type { PtySessionManager } from '../terminal/ptySessionManager.js';
 import {
   FLEET_ACCOUNT_CACHE_MS,
+  FLEET_ASK_CACHE_MS,
   FLEET_ASK_PEEK_TIMEOUT_S,
   FLEET_DIFF_MAX_BYTES,
   FLEET_DIFF_NEW_FILE_BYTES,
@@ -53,6 +54,8 @@ import {
   FLEET_TASK_SLUG,
   FLEET_TERMINAL_ID_BASE,
 } from './constants.js';
+import type { FleetHubMachine, FleetHubResponse } from './hubClient.js';
+import { parseTmuxPanes, runningMachineNames, TMUX_PANES_SCRIPT } from './hubFallback.js';
 import { IMAGE_UPLOAD_BASE64, IMAGE_UPLOAD_NAME, imageUploadScript } from './imageUpload.js';
 import { LAVISH_DELETE_SCRIPT } from './lavishDelete.js';
 import { PANE_PEEK_SCRIPT, parsePanePeek } from './paneAsk.js';
@@ -108,6 +111,7 @@ export class CloudControl {
   readonly #terminalIds = new Map<string, number>();
   readonly #forwards = new Map<string, { forward: PortForward; idle: NodeJS.Timeout }>();
   #nextTerminalId = FLEET_TERMINAL_ID_BASE;
+  #fallback: { readonly at: number; readonly response: FleetHubResponse } | null = null;
 
   constructor(private readonly deps: CloudControlDeps = defaultDeps()) {}
 
@@ -431,6 +435,38 @@ export class CloudControl {
     const result = await this.deps.run(['exec', machine, '--timeout', String(FLEET_PROMPT_PEEK_TIMEOUT_S), '--stdin', '--', 'bash', '-s'], home, PANE_PROMPTS_SCRIPT);
     if (result.code !== 0) throw new CloudControlError('failed', `prompt read exit ${result.code}`);
     return parsePanePrompts(result.stdout);
+  }
+
+  /**
+   * What the machines say when the hub cannot be reached: the tmux sessions of every machine InstaBox reports
+   * running, read over exec. It never wakes a sleeping machine, a failing machine is left out, and the answer is
+   * kept for FLEET_ASK_CACHE_MS so a polling board does not turn into a burst of execs.
+   */
+  async readRunningTmux(): Promise<FleetHubResponse> {
+    if (this.#fallback !== null && this.deps.now() - this.#fallback.at < FLEET_ASK_CACHE_MS) return this.#fallback.response;
+    const homes = await this.deps.listConfigHomes();
+    const listings = await Promise.all(homes.map((home) => this.deps.run(['ls', '--json'], home).catch(() => null)));
+    const owner = new Map<string, string>();
+    homes.forEach((home, index) => {
+      for (const name of runningMachineNames(listings[index]?.stdout ?? '')) {
+        if (FLEET_MACHINE_NAME.test(name) && !owner.has(name)) owner.set(name, home);
+      }
+    });
+    const nowMs = this.deps.now();
+    const answers = await Promise.all(
+      [...owner].map(async ([name, home]): Promise<FleetHubMachine | null> => {
+        try {
+          const result = await this.deps.run(['exec', name, '--timeout', String(FLEET_PROMPT_PEEK_TIMEOUT_S), '--', TMUX_PANES_SCRIPT], home);
+          if (result.code !== 0) return null;
+          return { agent_id: name, received_at: nowMs, sessions: [], repos: [], tmux: parseTmuxPanes(result.stdout, nowMs / 1000) };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const response: FleetHubResponse = { now: nowMs, machines: answers.filter((machine) => machine !== null) };
+    this.#fallback = { at: nowMs, response };
+    return response;
   }
 
   /** Starts a paused or suspended machine on the user's request; fails only when InstaBox accepted neither `start` nor `wake`. */

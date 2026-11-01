@@ -5,6 +5,7 @@ import { CloudControl, type CloudControlDeps } from '../src/fleet/cloudControl.j
 import {
   FLEET_REASON_BAD_INPUT,
   FLEET_REASON_COMMAND_FAILED,
+  FLEET_REASON_HUB_FALLBACK,
   FLEET_REASON_READ_ONLY,
   FLEET_STALE_AFTER_MS,
 } from '../src/fleet/constants.js';
@@ -16,6 +17,18 @@ import {
 import { handleFleetMessage } from '../src/fleet/handler.js';
 import type { FleetHubClient, FleetHubMachine } from '../src/fleet/hubClient.js';
 import type { PtySessionManager } from '../src/terminal/ptySessionManager.js';
+
+/** CloudControl deps that never reach the real InstaBox CLI; override only what a test needs. */
+function fakeInstabox(overrides: Partial<CloudControlDeps>): CloudControlDeps {
+  return {
+    listConfigHomes: async () => ['/config'],
+    run: async () => ({ code: 1, stdout: '', stderr: '' }),
+    launcher: { file: 'instabox', args: [] },
+    now: () => 1_000_000,
+    forward: async () => ({ localPort: 40_001, alive: () => true, stop: () => undefined }),
+    ...overrides,
+  };
+}
 
 function machine(agent_id: string, path: string, dirty_files: string[]): FleetHubMachine {
   return {
@@ -159,10 +172,14 @@ describe('handleFleetMessage', () => {
         throw new Error('offline');
       }),
     };
+    // InstaBox is unreachable too: the fallback read fails and must not fall through to the real CLI.
+    const cloud = new CloudControl({
+      ...fakeInstabox({ listConfigHomes: async () => Promise.reject(new Error('no instabox')) }),
+    });
     handleFleetMessage(
       { type: 'fleetRequest', requestId: 'request-2' },
       (message) => sent.push(message),
-      { fleet, ledger: null, getLocalGuard: () => guard, privileged: true },
+      { fleet, cloud, ledger: null, getLocalGuard: () => guard, privileged: true },
     );
     // The snapshot comes first; the branch analysis may follow as a second update.
     await vi.waitFor(() => expect(sent.length).toBeGreaterThanOrEqual(1));
@@ -171,6 +188,35 @@ describe('handleFleetMessage', () => {
       localGuard: guard,
       machines: [],
       hubError: FLEET_REASON_COMMAND_FAILED,
+    });
+  });
+
+  it('still lists the tmux sessions of running machines when the hub answers an error (TC-HUBFALLBACK-04)', async () => {
+    const sent: ServerMessage[] = [];
+    const fleet: FleetHubClient = {
+      fetchFleet: vi.fn(async () => {
+        throw new Error('Fleet hub responded with 409.');
+      }),
+    };
+    const cloud = new CloudControl(
+      fakeInstabox({
+        run: async (args) =>
+          args[0] === 'ls'
+            ? { code: 0, stdout: '[{"name":"danh","state":"running"}]', stderr: '' }
+            : { code: 0, stdout: 'hi-dnma|0|990|/data/home/wt/x\n', stderr: '' },
+      }),
+    );
+    handleFleetMessage({ type: 'fleetRequest', requestId: 'request-3' }, (message) => sent.push(message), {
+      fleet,
+      cloud,
+      ledger: null,
+      privileged: true,
+    });
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThanOrEqual(1));
+    expect(sent[0]).toMatchObject({
+      type: 'fleetSnapshot',
+      hubError: FLEET_REASON_HUB_FALLBACK,
+      machines: [{ agentId: 'danh', tmuxSessions: [{ name: 'hi-dnma' }] }],
     });
   });
 });
