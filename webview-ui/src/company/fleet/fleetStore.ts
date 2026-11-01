@@ -94,7 +94,7 @@ export interface FleetStore {
   /** Stops waiting for the action in flight (its late answer is ignored) so the buttons work again. */
   cancelAction: () => void;
   /** Removes a task the board started (tmux, worktrees, branch); the machine refuses while it holds unsaved work. */
-  cleanTask: (machine: string, session: string) => void;
+  cleanTask: (machine: string, session: string, pushFirst?: boolean) => void;
   /** Starts a machine InstaBox paused; the fleet is asked again once InstaBox accepted it. */
   wakeMachine: (machine: string) => void;
   /** Opens the session in a new browser tab once the board has forwarded a local port to the machine. */
@@ -327,8 +327,8 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     createTask: (task) => {
       act({ type: 'fleetTaskCreate', requestId: newRequestId(), ...task }, 'task', task.slug);
     },
-    cleanTask: (machine, session) => {
-      act({ type: 'fleetTaskClean', requestId: newRequestId(), machine, session }, 'clean', session);
+    cleanTask: (machine, session, pushFirst = false) => {
+      act({ type: 'fleetTaskClean', requestId: newRequestId(), machine, session, ...(pushFirst ? { pushFirst: true } : {}) }, 'clean', session);
     },
     wakeMachine: (machine) => {
       act({ type: 'fleetMachineWake', requestId: newRequestId(), machine }, 'wake', machine);

@@ -50,8 +50,8 @@ function addTask(slug: string, kind: 'web' | 'all' = 'web'): string {
   return worktree;
 }
 
-function clean(slug: string): { code: number | null; last: string } {
-  const result = spawnSync('bash', ['-s', '--', slug], {
+function clean(slug: string, mode = ''): { code: number | null; last: string } {
+  const result = spawnSync('bash', ['-s', '--', slug, ...(mode === '' ? [] : [mode])], {
     input: TASK_CLEAN_SCRIPT,
     encoding: 'utf8',
     env: { ...process.env, HOME: machine.home, CLOUD_WT_BASE: machine.base },
@@ -106,6 +106,32 @@ describe.skipIf(!hasBash)('TASK_CLEAN_SCRIPT', { timeout: 30_000 }, () => {
     sh(worktree, 'git push -q origin HEAD');
     expect(clean('viec-commit').code).toBe(0);
     expect(existsSync(worktree)).toBe(false);
+  });
+
+  it('with the push mode, saves unpushed commits of the cloud branch to origin and then cleans', () => {
+    const worktree = addTask('viec-push');
+    sh(worktree, 'echo b > b.txt; git add b.txt; git commit -q -m work');
+
+    expect(clean('viec-push')).toMatchObject({ code: 7 });
+    expect(existsSync(worktree)).toBe(true);
+
+    expect(clean('viec-push', 'push')).toEqual({ code: 0, last: 'OK viec-push' });
+    expect(existsSync(worktree)).toBe(false);
+    expect(sh(machine.root, 'git ls-remote --heads origin cloud/m-viec-push')).toContain('refs/heads/cloud/m-viec-push');
+  });
+
+  it('with the push mode, still refuses uncommitted files and never pushes a branch outside cloud/', () => {
+    const dirty = addTask('viec-do2');
+    writeFileSync(`${dirty}/new.txt`, 'unsaved');
+    expect(clean('viec-do2', 'push')).toMatchObject({ code: 7 });
+    expect(existsSync(dirty)).toBe(true);
+
+    const other = addTask('viec-main');
+    sh(other, 'git checkout -q -b feature/x; echo c > c.txt; git add c.txt; git commit -q -m work');
+    const result = clean('viec-main', 'push');
+    expect(result.code).toBe(7);
+    expect(sh(machine.root, 'git ls-remote --heads origin feature/x')).toBe('');
+    expect(existsSync(other)).toBe(true);
   });
 
   it('ignores the copied tsc cache, which cloud-giao puts in every worktree', () => {

@@ -172,12 +172,12 @@ export class CloudControl {
   }
 
   /** Removes a task cloud-giao started (tmux, worktrees, branch, ledger entry); the machine refuses while anything in it is unsaved. */
-  async cleanTask(machine: string, slug: string): Promise<void> {
+  async cleanTask(machine: string, slug: string, pushFirst = false): Promise<void> {
     if (!FLEET_MACHINE_NAME.test(machine) || !FLEET_TASK_SLUG.test(slug)) {
       throw new CloudControlError('bad_input', 'invalid task');
     }
     const home = await this.#wake(machine);
-    const result = await this.deps.run(['exec', machine, '--timeout', '120', '--stdin', '--', 'bash', '-s', '--', slug], home, TASK_CLEAN_SCRIPT);
+    const result = await this.deps.run(['exec', machine, '--timeout', '120', '--stdin', '--', 'bash', '-s', '--', slug, ...(pushFirst ? ['push'] : [])], home, TASK_CLEAN_SCRIPT);
     if (result.code !== 0 || !/^OK /m.test(result.stdout)) {
       const said = `${result.stdout}\n${result.stderr}`.trim().split('\n').filter(Boolean).pop();
       throw new CloudControlError('failed', said ?? `clean exit ${result.code}`);

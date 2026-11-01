@@ -120,7 +120,7 @@ export function handleFleetMessage(
     const machine = typeof msg.machine === 'string' ? msg.machine : '';
     const session = typeof msg.session === 'string' ? msg.session : '';
     cloudOf(context)
-      .cleanTask(machine, session)
+      .cleanTask(machine, session, msg.pushFirst === true)
       .then(() => send({ type: 'fleetTaskCleaned', requestId, machine, session }))
       .catch((error: unknown) => send(failure(requestId, error)));
     return true;

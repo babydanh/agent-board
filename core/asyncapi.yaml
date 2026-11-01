@@ -6528,6 +6528,9 @@ components:
         session:
           type: string
           pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        pushFirst:
+          type: boolean
+          description: Push the unpushed commits of the task's cloud/* branch to origin before removing it, so nothing is lost. Uncommitted files still refuse the clean.
 
     FleetTaskCleanedMessage:
       type: object

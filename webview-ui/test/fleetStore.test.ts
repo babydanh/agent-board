@@ -136,6 +136,15 @@ describe('fleet task cleaning', () => {
     expect(store.getSnapshot().cleanedTask).toEqual({ machine: 'danh1', session: 'fix-aqp' });
   });
 
+  it('can ask the machine to push the branch before removing it', () => {
+    const sent: ClientMessage[] = [];
+    const store = createFleetStore({ send: (message) => sent.push(message), newRequestId: () => 'c3' });
+
+    store.cleanTask('danh1', 'fix-aqp', true);
+
+    expect(sent).toEqual([{ type: 'fleetTaskClean', requestId: 'c3', machine: 'danh1', session: 'fix-aqp', pushFirst: true }]);
+  });
+
   it('keeps the machine\'s reason when it refuses and records nothing', () => {
     const store = createFleetStore({ send: () => undefined, newRequestId: () => 'c2' });
 

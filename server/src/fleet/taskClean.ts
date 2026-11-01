@@ -5,6 +5,7 @@
  * It removes nothing when any worktree holds uncommitted files or commits no remote has: those would be lost.
  * The only path it ever removes comes from the ledger entry and must lie under the worktree base. The slug is
  * validated by the caller against FLEET_TASK_SLUG and is only ever read as "$1", never spliced into code.
+ * With the second argument `push`, unpushed commits of a cloud/* branch are pushed to origin first, so cleaning loses nothing.
  * A task with no ledger entry and no tmux session is already gone: that is success, so the board can forget its row.
  * A tmux session cloud-giao did not create (started by hand) has no worktree of ours: only the session is closed, every file stays.
  * Exit codes: 3 a path it will not touch (or a session tmux would not close), 5 git refused, 7 unsaved work. The last line is the reason, or `OK <slug>`.
@@ -27,6 +28,14 @@ trees=()
 for w in "$cwd" "$cwd/backend" "$cwd/web" "$cwd/app"; do [ -e "$w/.git" ] && trees+=("$w"); done
 for w in "\${trees[@]}"; do
   if git -C "$w" status --porcelain 2>/dev/null | grep -qv ' \.tsc-cache/\?$'; then echo "Con file chua commit trong $w"; exit 7; fi
+done
+# Unpushed commits: refuse, unless the caller asked to save them first (mode "push"): only a cloud/* branch is ever pushed.
+for w in "\${trees[@]}"; do
+  [ -z "$(git -C "$w" log --oneline -1 HEAD --not --remotes 2>/dev/null)" ] && continue
+  [ "\${2:-}" = push ] || { echo "Con commit chua push trong $w"; exit 7; }
+  branch="$(git -C "$w" rev-parse --abbrev-ref HEAD)"
+  case "$branch" in cloud/*) ;; *) echo "Con commit chua push tren nhanh $branch (chi tu day nhanh cloud/*)"; exit 7 ;; esac
+  git -C "$w" push -q -u origin "$branch" >/dev/null 2>&1 || { echo "Khong day duoc nhanh $branch len GitHub"; exit 7; }
   [ -z "$(git -C "$w" log --oneline -1 HEAD --not --remotes 2>/dev/null)" ] || { echo "Con commit chua push trong $w"; exit 7; }
 done
 tmux kill-session -t "=$slug" 2>/dev/null || true

@@ -269,15 +269,21 @@ export function BoardShell({ client }: BoardShellProps) {
     refreshFleet();
   }, [fleet.cleanedTask, refreshFleet]);
   // The machine's refusal (unsaved work) has no page to show on: say it here.
-  const cleanInFlight = useRef(false);
+  const cleanInFlight = useRef<{ machine: string; session: string } | null>(null);
+  // Set when the machine refused only because commits exist nowhere else: the notice then offers to push the branch and clean.
+  const [pushableClean, setPushableClean] = useState<{ machine: string; session: string } | null>(null);
   useEffect(() => {
     if (fleet.action?.kind === 'clean') {
-      cleanInFlight.current = true;
+      cleanInFlight.current = { machine: fleet.action.machine, session: fleet.action.session };
+      setPushableClean(null);
       return;
     }
-    if (!cleanInFlight.current || fleet.action !== null) return;
-    cleanInFlight.current = false;
-    if (fleet.actionError !== null) setSessionNotice(`Không xoá được phiên cloud: ${fleet.actionError}`);
+    const cleaning = cleanInFlight.current;
+    if (cleaning === null || fleet.action !== null) return;
+    cleanInFlight.current = null;
+    if (fleet.actionError === null) return;
+    setSessionNotice(`Không xoá được phiên cloud: ${fleet.actionError}`);
+    if (fleet.actionError.includes('commit chua push')) setPushableClean(cleaning);
   }, [fleet.action, fleet.actionError]);
   // A delete or move the server refused (or never answered) used to fail without a word: say so once per failure.
   const shownProjectFailure = useRef('');
@@ -1189,6 +1195,21 @@ export function BoardShell({ client }: BoardShellProps) {
               onClick={() => fleetStore.wakeMachine(pausedMachine)}
             >
               {fleet.action?.kind === 'wake' ? 'Đang bật máy…' : `Bật máy ${pausedMachine}`}
+            </button>
+          )}
+          {pushableClean !== null && sessionNotice?.startsWith('Không xoá được phiên cloud') === true && (
+            <button
+              type="button"
+              className="company-btn company-btn-sm company-btn-primary"
+              disabled={fleet.action !== null}
+              title="Đẩy nhánh cloud/… của phiên lên GitHub (không phải main), rồi xóa phiên trên máy. Commit không mất."
+              onClick={() => {
+                fleetStore.cleanTask(pushableClean.machine, pushableClean.session, true);
+                setPushableClean(null);
+                setSessionNotice(null);
+              }}
+            >
+              Đẩy nhánh rồi xóa
             </button>
           )}
           <button type="button" aria-label="Đóng thông báo" onClick={() => setSessionNotice(null)}>×</button>

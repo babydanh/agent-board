@@ -29,6 +29,15 @@ describe('CloudControl.cleanTask', () => {
     expect(exec?.input).toBe(TASK_CLEAN_SCRIPT);
   });
 
+  it('asks the machine to push the branch first only when told to', async () => {
+    const { cloud, calls } = fakeCloud({ code: 0, stdout: 'OK fix-aqp\n', stderr: '' });
+
+    await cloud.cleanTask('danh1', 'fix-aqp', true);
+
+    const exec = calls.find((call) => call.args[0] === 'exec');
+    expect(exec?.args.slice(-3)).toEqual(['--', 'fix-aqp', 'push']);
+  });
+
   it('reports the reason the machine gave when it refuses', async () => {
     const { cloud } = fakeCloud({ code: 7, stdout: 'Con file chua commit trong /data/home/wt/web-x\n', stderr: '' });
 
