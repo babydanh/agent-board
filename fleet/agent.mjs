@@ -15,9 +15,10 @@ import {
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
+import { loadPendingResults, runDelivered } from './commands.mjs';
 import { backup, prune, scan } from './git-guard.mjs';
-import { signJwt } from './jwt.mjs';
 import { collectVerdicts, loadJudgeList, saveJudgeList } from './judgeRun.mjs';
+import { signJwt } from './jwt.mjs';
 import { snapshotLane } from './snapshot.mjs';
 
 const ROOT = process.env.FLEET_ROOT ?? '/data/home';
@@ -414,6 +415,9 @@ if (process.env.FLEET_ID) {
   // Off by default: snapshots push code to GitHub (refs/wip) and judging fetches it, so a machine opts in with FLEET_SNAPSHOT=1.
   const snapshotsOn = process.env.FLEET_SNAPSHOT === '1';
   const judgeFile = join(process.env.HOME ?? ROOT, '.fleet', 'judge.json');
+  // Remote commands (snapshot-push, clean-worktree) run only where FLEET_COMMANDS=1; results wait in a file until the hub confirms them.
+  const commandsOn = process.env.FLEET_COMMANDS === '1';
+  const resultsFile = join(process.env.HOME ?? ROOT, '.fleet', 'results.json');
   let verdicts = [];
   if (snapshotsOn) {
     for (const row of repoRows) {
@@ -440,13 +444,22 @@ if (process.env.FLEET_ID) {
         repos: repoRows,
         guard: summarizeGuard(guardReport),
         verdicts,
+        results: loadPendingResults(resultsFile),
       }),
     ),
     signal: AbortSignal.timeout(15000),
   }).catch((e) => ({ status: 0, text: async () => e.message }));
-  // The hub's answer names the repositories this machine must judge; the next run uses it.
-  if (snapshotsOn && res.status === 200) {
-    try { saveJudgeList(judgeFile, (await res.json()).judge); } catch { /* keep the previous assignment */ }
+  // The hub's answer names the repositories this machine must judge (the next run uses it) and may carry a command.
+  if (res.status === 200) {
+    const reply = await res.json().catch(() => ({}));
+    if (snapshotsOn) {
+      try { saveJudgeList(judgeFile, reply.judge); } catch { /* keep the previous assignment */ }
+    }
+    await runDelivered(reply.commands, {
+      enabled: commandsOn,
+      file: resultsFile,
+      deps: { machine: id, now: Date.now, lanes: () => repoRows.map((row) => row.path), snapshot: snapshotLane },
+    });
   }
   if (process.env.GIT_GUARD_BACKUP !== '0' && shouldBackupGuard(lastBackupTime())) {
     try { backup(guardReport); }

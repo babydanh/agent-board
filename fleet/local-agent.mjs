@@ -15,6 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, repoFromOrigin } from './agent.mjs';
+import { loadPendingResults, runDelivered } from './commands.mjs';
 import { signJwt } from './jwt.mjs';
 import { createLaneScanner } from './laneScan.mjs';
 import { snapshotLane } from './snapshot.mjs';
@@ -27,6 +28,7 @@ const HUB_REPO_LIMIT = 20;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const DEFAULT_CONFIG = join(homedir(), '.pixel-agents', 'fleet-local.json');
 const DEFAULT_KEY = join(homedir(), '.pixel-agents', 'fleet-local-key.pem');
+const RESULTS_FILE = join(homedir(), '.pixel-agents', 'fleet-results.json');
 
 /** "local-<host>" with only characters the hub and the board accept in a machine name. */
 export function localAgentId(host = hostname()) {
@@ -47,8 +49,8 @@ export function parseConfig(text) {
   }
   const id = raw.id === undefined ? localAgentId() : String(raw.id);
   if (!ID_PATTERN.test(id)) throw new Error('config.id must match [a-z0-9-], at most 40 characters');
-  // Snapshots push code to GitHub (refs/wip): only a literal `true` turns them on.
-  return { hub: hub.origin, keyPath: typeof raw.keyPath === 'string' && raw.keyPath !== '' ? raw.keyPath : DEFAULT_KEY, roots: raw.roots, id, snapshots: raw.snapshots === true };
+  // Snapshots push code to GitHub (refs/wip) and commands let the board act on this machine: only a literal `true` turns either on.
+  return { hub: hub.origin, keyPath: typeof raw.keyPath === 'string' && raw.keyPath !== '' ? raw.keyPath : DEFAULT_KEY, roots: raw.roots, id, snapshots: raw.snapshots === true, commands: raw.commands === true };
 }
 
 /** The paths of the working trees of one repository (the root first); bare and prunable entries are skipped. */
@@ -119,6 +121,7 @@ export async function sendReport(config, report, fetcher = fetch) {
     signal: AbortSignal.timeout(15_000),
   });
   if (response.status !== 200) throw new Error(`hub ${response.status} ${await response.text()}`);
+  return response.json().catch(() => ({}));
 }
 
 /** Creates the Ed25519 key once (mode 0600) and returns the public key PEM; an existing key is never replaced. */
@@ -141,8 +144,14 @@ async function main(args) {
   const config = parseConfig(readFileSync(configPath, 'utf8'));
   const once = async () => {
     try {
-      const report = buildReport(config);
-      await sendReport(config, report);
+      // Results of the previous round ride this report; the reply confirms them and may carry the next command.
+      const report = { ...buildReport(config), results: loadPendingResults(RESULTS_FILE) };
+      const reply = await sendReport(config, report);
+      await runDelivered(reply.commands, {
+        enabled: config.commands,
+        file: RESULTS_FILE,
+        deps: { machine: config.id, now: Date.now, lanes: () => report.repos.map((row) => row.path), snapshot: snapshotLane },
+      });
       console.log(`local-agent: reported as ${config.id}`);
       if (config.snapshots) {
         for (const row of report.repos) {

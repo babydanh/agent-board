@@ -22,7 +22,7 @@ test('TC-LOCALAGENT-01: the id keeps only characters the hub and the board accep
 
 test('TC-LOCALAGENT-02: config is validated before anything runs', () => {
   const ok = parseConfig(JSON.stringify({ hub: 'https://hub.example.com/path', keyPath: 'k.pem', roots: ['V:/a'], id: 'local-pc' }));
-  assert.deepEqual(ok, { hub: 'https://hub.example.com', keyPath: 'k.pem', roots: ['V:/a'], id: 'local-pc', snapshots: false });
+  assert.deepEqual(ok, { hub: 'https://hub.example.com', keyPath: 'k.pem', roots: ['V:/a'], id: 'local-pc', snapshots: false, commands: false });
   assert.throws(() => parseConfig('not json'), /valid JSON/);
   assert.throws(() => parseConfig(JSON.stringify({ hub: 'http://hub', roots: ['a'] })), /https/);
   assert.throws(() => parseConfig(JSON.stringify({ hub: 'https://hub', roots: [] })), /roots/);
