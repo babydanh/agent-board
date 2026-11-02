@@ -19,7 +19,7 @@ import { loadPendingResults, runDelivered } from './commands.mjs';
 import { backup, prune, scan } from './git-guard.mjs';
 import { collectVerdicts, loadJudgeList, saveJudgeList } from './judgeRun.mjs';
 import { signJwt } from './jwt.mjs';
-import { snapshotLane } from './snapshot.mjs';
+import { pruneSnapshots, snapshotLane } from './snapshot.mjs';
 
 const ROOT = process.env.FLEET_ROOT ?? '/data/home';
 
@@ -422,6 +422,7 @@ if (process.env.FLEET_ID) {
   if (snapshotsOn) {
     for (const row of repoRows) {
       try { snapshotLane(row.path, id); } catch (error) { console.error(`fleet-agent: snapshot ${row.path}: ${error.message}`); }
+      try { pruneSnapshots(row.path, id); } catch (error) { console.error(`fleet-agent: prune ${row.path}: ${error.message}`); }
     }
     verdicts = collectVerdicts(loadJudgeList(judgeFile), repoRows, { budgetMs: 20_000 });
   }

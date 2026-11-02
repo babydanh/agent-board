@@ -18,7 +18,7 @@ import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, re
 import { loadPendingResults, runDelivered } from './commands.mjs';
 import { signJwt } from './jwt.mjs';
 import { createLaneScanner } from './laneScan.mjs';
-import { snapshotLane } from './snapshot.mjs';
+import { pruneSnapshots, snapshotLane } from './snapshot.mjs';
 
 // The hub calls a machine stale after 10 minutes of silence; 2 minutes keeps overlap warnings fresh at a fraction of
 // the old 60 s scan cost, because unchanged checkouts now cost one `git status` each (see laneScan.mjs).
@@ -156,6 +156,7 @@ async function main(args) {
       if (config.snapshots) {
         for (const row of report.repos) {
           try { snapshotLane(row.path, config.id); } catch (error) { console.error(`local-agent: snapshot ${row.path}: ${error.message}`); }
+          try { pruneSnapshots(row.path, config.id); } catch (error) { console.error(`local-agent: prune ${row.path}: ${error.message}`); }
         }
       }
     } catch (error) {

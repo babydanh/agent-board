@@ -8,7 +8,7 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { defaultBranch, GIT_OPTIONS, git } from './agent.mjs';
+import { defaultBranch, git,GIT_OPTIONS } from './agent.mjs';
 import { filterSnapshotFiles } from './snapshotFilter.mjs';
 
 export const MIN_PUSH_GAP_MS = 60_000;
@@ -33,6 +33,40 @@ export function assertWipRef(ref) {
 export function pushWipRef(path, commit, ref) {
   assertWipRef(ref);
   execFileSync('git', ['-C', path, 'push', '-q', '--no-verify', 'origin', `+${commit}:${ref}`], { ...GIT_OPTIONS, timeout: 60_000 });
+}
+
+/** Deletes one wip ref from the remote. Same guard as the push: nothing outside refs/wip/<machine>/<lane> is ever named. */
+export function deleteWipRef(path, ref) {
+  assertWipRef(ref);
+  try {
+    execFileSync('git', ['-C', path, 'push', '-q', '--no-verify', 'origin', `:${ref}`], { ...GIT_OPTIONS, timeout: 60_000 });
+  } catch (error) {
+    // Already gone from the remote (deleted by hand or by an earlier run): that is the state we wanted.
+    const listed = execFileSync('git', ['-C', path, 'ls-remote', 'origin', ref], { ...GIT_OPTIONS, timeout: 60_000 });
+    if (listed.trim() !== '') throw error;
+  }
+}
+
+export const WIP_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Deletes this machine's snapshot refs that were last pushed more than `maxAgeMs` ago (the state file records when).
+ * Another machine's namespace and every branch are never touched. A delete that fails keeps its entry for the next run.
+ * Returns the refs removed.
+ */
+export function pruneSnapshots(path, machine, { remove = deleteWipRef, now = Date.now, maxAgeMs = WIP_MAX_AGE_MS } = {}) {
+  const file = stateFile(path);
+  const state = readState(file);
+  const prefix = `refs/wip/${machine}/`;
+  const removed = [];
+  for (const [ref, entry] of Object.entries(state)) {
+    if (!ref.startsWith(prefix) || !(now() - Number(entry?.at) >= maxAgeMs)) continue;
+    try { remove(path, ref); } catch { continue; }
+    delete state[ref];
+    removed.push(ref);
+  }
+  if (removed.length > 0) writeFileSync(file, JSON.stringify(state));
+  return removed;
 }
 
 /** Raw git output, untrimmed, stdin optional; failures throw. */

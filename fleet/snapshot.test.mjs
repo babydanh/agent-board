@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { assertWipRef, pushWipRef, snapshotLane, wipRef } from './snapshot.mjs';
+import { assertWipRef, pruneSnapshots, pushWipRef, snapshotLane, wipRef } from './snapshot.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 const fakeToken = (prefix, length) => prefix + 'a'.repeat(length);
@@ -136,4 +136,52 @@ test('TC-SNAPSHOT-09: a lane with commits only is shared as its own HEAD, with n
   const result = snapshotLane(clone, 'danh', { now: () => 1_000_000 });
   assert.equal(result.commit, git(clone, 'rev-parse', 'HEAD'));
   assert.equal(git(origin, 'rev-parse', 'refs/wip/danh/topic'), result.commit);
+});
+
+test('TC-SNAPPRUNE-01: snapshot refs older than the limit are deleted from the remote, newer ones and other machines are left alone', () => {
+  const { origin, clone } = fixture();
+  const day = 24 * 60 * 60 * 1000;
+  const now = 1_000 * day;
+  // Three pushes at different times, as the snapshot state records them.
+  const head = git(clone, 'rev-parse', 'HEAD');
+  for (const ref of ['refs/wip/danh/old', 'refs/wip/danh/new', 'refs/wip/other/old']) git(clone, 'push', '-q', origin, `${head}:${ref}`);
+  const stateFile = join(git(clone, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'fleet-snapshot-state.json');
+  writeFileSync(stateFile, JSON.stringify({
+    'refs/wip/danh/old': { key: 'k', at: now - 20 * day, commit: head },
+    'refs/wip/danh/new': { key: 'k', at: now - 1 * day, commit: head },
+    'refs/wip/other/old': { key: 'k', at: now - 20 * day, commit: head },
+  }));
+  const removed = pruneSnapshots(clone, 'danh', { now: () => now });
+  assert.deepEqual(removed, ['refs/wip/danh/old']);
+  const remote = git(clone, 'ls-remote', origin, 'refs/wip/*');
+  assert.ok(!remote.includes('refs/wip/danh/old'));
+  assert.ok(remote.includes('refs/wip/danh/new'));
+  assert.ok(remote.includes('refs/wip/other/old'), 'another machine\'s namespace is never touched');
+  assert.ok(git(clone, 'ls-remote', origin, 'refs/heads/main').includes('refs/heads/main'));
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(stateFile, 'utf8'))).sort(), ['refs/wip/danh/new', 'refs/wip/other/old']);
+  // Nothing due: nothing is pushed and the answer is empty.
+  assert.deepEqual(pruneSnapshots(clone, 'danh', { now: () => now, remove: () => { throw new Error('must not delete'); } }), []);
+});
+
+test('TC-SNAPPRUNE-02: a delete that fails keeps the entry so the next run tries again, and never targets a branch', () => {
+  const { clone } = fixture();
+  const day = 24 * 60 * 60 * 1000;
+  const stateFile = join(git(clone, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'fleet-snapshot-state.json');
+  writeFileSync(stateFile, JSON.stringify({
+    'refs/wip/danh/old': { key: 'k', at: 0, commit: 'x' },
+    'refs/heads/main': { key: 'k', at: 0, commit: 'x' },
+  }));
+  const asked = [];
+  const removed = pruneSnapshots(clone, 'danh', { now: () => 30 * day, remove: (_path, ref) => { asked.push(ref); throw new Error('offline'); } });
+  assert.deepEqual(removed, []);
+  assert.deepEqual(asked, ['refs/wip/danh/old']);
+  assert.ok('refs/wip/danh/old' in JSON.parse(readFileSync(stateFile, 'utf8')));
+});
+
+test('TC-SNAPPRUNE-03: a ref that is already gone from the remote counts as removed, so it is not retried forever', () => {
+  const { clone } = fixture();
+  const stateFile = join(git(clone, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'fleet-snapshot-state.json');
+  writeFileSync(stateFile, JSON.stringify({ 'refs/wip/danh/gone': { key: 'k', at: 0, commit: 'x' } }));
+  assert.deepEqual(pruneSnapshots(clone, 'danh', { now: () => 30 * 24 * 60 * 60 * 1000 }), ['refs/wip/danh/gone']);
+  assert.deepEqual(JSON.parse(readFileSync(stateFile, 'utf8')), {});
 });
