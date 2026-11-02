@@ -153,6 +153,21 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
   );
 }
 
+const VERDICT_LABEL: Record<NonNullable<FleetOverlapWarning['verdict']>, { text: string; className: string; title: string }> = {
+  conflict: { text: 'Git: xung đột', className: 'text-danger', title: 'Git thật sự báo xung đột khi gộp hai bản chụp' },
+  auto: { text: 'Git: tự gộp được', className: 'text-success', title: 'Cùng tệp nhưng git tự gộp được, không cần sửa tay' },
+  incomplete: { text: 'chưa quét hết', className: 'text-warning', title: 'Chưa kiểm xong cặp này, chưa thể nói là an toàn' },
+};
+
+function VerdictBadge({ verdict }: { verdict: NonNullable<FleetOverlapWarning['verdict']> }) {
+  const label = VERDICT_LABEL[verdict];
+  return (
+    <span className={`ml-2 rounded border border-current px-1 ${label.className}`} title={label.title}>
+      {label.text}
+    </span>
+  );
+}
+
 export function FleetOverlapItem({ overlap }: { overlap: FleetOverlapWarning }) {
   return (
     <li className="rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
@@ -168,6 +183,7 @@ export function FleetOverlapItem({ overlap }: { overlap: FleetOverlapWarning }) 
             khác nền
           </span>
         ) : null}
+        {overlap.verdict ? <VerdictBadge verdict={overlap.verdict} /> : null}
       </p>
       {overlap.detail ? <p className="mt-1 break-all font-mono text-xs text-text-muted">{overlap.detail}</p> : null}
     </li>
