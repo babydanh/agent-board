@@ -10,6 +10,7 @@ import { FLEET_ACTION_LABEL } from './fleetActionLabel.js';
 import { fleetStore } from './fleetClient.js';
 import { createFleetDiffCommentSelector, type FleetDiffCommentSelection } from './fleetDiffComment.js';
 import { type FleetState, useFleetState } from './fleetStore.js';
+import { silenceLabel } from './machineSilence.js';
 import { splitMachines } from './sleepingMachines.js';
 import { SleepingMachinesDialog } from './SleepingMachinesDialog.js';
 
@@ -568,6 +569,8 @@ function BranchStatusBadges({
   );
 }
 
+const SILENCE_TICK_MS = 60_000;
+
 function MachineCard({
   machine,
   analyses,
@@ -581,14 +584,20 @@ function MachineCard({
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(machine.receivedAt);
-  const stateLabel = machine.state === 'stale' ? 'Ngủ / mất kết nối' : 'Đang hoạt động';
+  // The clock ticks once a minute so a silence label keeps growing without a new report.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), SILENCE_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  const silence = silenceLabel(machine.state, machine.receivedAt, nowMs);
 
   return (
     <article className="space-y-3 rounded border border-hairline bg-well p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h2 className="break-all font-mono text-sm font-semibold text-text">{machine.agentId}</h2>
-        <span className={`text-xs ${machine.state === 'stale' ? 'text-warning' : 'text-text-muted'}`}>
-          {stateLabel}
+        <span className={`text-xs ${silence.className}`}>
+          {silence.text}
         </span>
       </div>
       <p className="text-xs text-text-muted">
