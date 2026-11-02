@@ -172,6 +172,9 @@ components:
         - $ref: '#/components/schemas/FleetDiffMessage'
         - $ref: '#/components/schemas/FleetHistoryMessage'
         - $ref: '#/components/schemas/FleetCommandHistoryMessage'
+        - $ref: '#/components/schemas/FleetCleanupPlanMessage'
+        - $ref: '#/components/schemas/FleetCleanupProgressMessage'
+        - $ref: '#/components/schemas/FleetCleanupDoneMessage'
         # Share (privileged; view-only links to cloud terminals)
         - $ref: '#/components/schemas/ShareResultMessage'
         # Project tree (privileged; project, checkout and session data)
@@ -305,6 +308,8 @@ components:
         - $ref: '#/components/schemas/FleetHistoryRequestMessage'
         - $ref: '#/components/schemas/FleetCommandQueueMessage'
         - $ref: '#/components/schemas/FleetCommandHistoryRequestMessage'
+        - $ref: '#/components/schemas/FleetCleanupPlanRequestMessage'
+        - $ref: '#/components/schemas/FleetCleanupStartMessage'
         - $ref: '#/components/schemas/FleetCloudCommentSendMessage'
         - $ref: '#/components/schemas/FleetBranchActionMessage'
         # Project tree (privileged; tree CRUD, diffs, comments, settings and sessions)
@@ -6747,6 +6752,69 @@ components:
           type: string
           format: uuid
 
+    FleetCleanupPlanRequestMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId]
+      description: Ask which checkouts on the cloud machines are real work for staging, which are junk and which are kept (privileged, read-only).
+      properties:
+        type:
+          const: fleetCleanupPlanRequest
+        requestId:
+          type: string
+          format: uuid
+
+    FleetCleanupSelectedBranch:
+      type: object
+      additionalProperties: false
+      required: [machine, path, branch]
+      properties:
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        path:
+          type: string
+          minLength: 1
+          maxLength: 500
+        branch:
+          type: string
+          pattern: '^[A-Za-z0-9._/-]{1,100}$'
+
+    FleetCleanupSelectedJunk:
+      type: object
+      additionalProperties: false
+      required: [machine, path]
+      properties:
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        path:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    FleetCleanupStartMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, staging, junk]
+      description: Run the cleanup for the ticked items only (privileged). The server plans again and ignores anything the fresh plan does not list; it never touches main or production. Progress comes as fleetCleanupProgress, the end as fleetCleanupDone.
+      properties:
+        type:
+          const: fleetCleanupStart
+        requestId:
+          type: string
+          format: uuid
+        staging:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/FleetCleanupSelectedBranch'
+        junk:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/FleetCleanupSelectedJunk'
+
     FleetCloudCommentSendMessage:
       type: object
       additionalProperties: false
@@ -6894,6 +6962,106 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FleetCommandRow'
+
+    FleetCleanupItem:
+      type: object
+      additionalProperties: false
+      required: [machine, repo, path, branch, dirty, unpushed, backedUp, prunable, idleDays, reason]
+      properties:
+        machine:
+          type: string
+        repo:
+          type: string
+        path:
+          type: string
+        branch:
+          type: [string, 'null']
+        dirty:
+          type: number
+        unpushed:
+          type: number
+        backedUp:
+          type: boolean
+        prunable:
+          type: boolean
+        idleDays:
+          type: number
+        reason:
+          type: string
+
+    FleetCleanupPlanMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, staging, junk, kept]
+      description: The cloud checkouts sorted for cleanup. Nothing is removed until the user ticks items and starts it.
+      properties:
+        type:
+          const: fleetCleanupPlan
+        requestId:
+          type: string
+          format: uuid
+        staging:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetCleanupItem'
+        junk:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetCleanupItem'
+        kept:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetCleanupItem'
+
+    FleetCleanupProgressMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, step, machine, path, status]
+      description: One step of a running cleanup for one checkout.
+      properties:
+        type:
+          const: fleetCleanupProgress
+        requestId:
+          type: string
+          format: uuid
+        step:
+          type: string
+          enum: [backup, tests, staging, readback, clean]
+        machine:
+          type: string
+        path:
+          type: string
+        branch:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [running, ok, failed, skipped]
+        detail:
+          type: string
+
+    FleetCleanupDoneMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, ok, staged, cleaned, failed, skipped]
+      description: The end of a cleanup run. When refused is set nothing was queued.
+      properties:
+        type:
+          const: fleetCleanupDone
+        requestId:
+          type: string
+          format: uuid
+        ok:
+          type: boolean
+        staged:
+          type: number
+        cleaned:
+          type: number
+        failed:
+          type: number
+        skipped:
+          type: number
+        refused:
+          type: string
 
     FleetSnapshotMessage:
       type: object

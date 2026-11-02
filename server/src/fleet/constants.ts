@@ -70,3 +70,14 @@ export const FLEET_PROMPT_CACHE_MS = 60_000;
 export const FLEET_PROMPT_PEEK_TIMEOUT_S = 25;
 /** The hub keeps at most this many task entries per machine (fleet/hub.mjs); a list this long may have been cut. */
 export const FLEET_HUB_TASK_LIMIT = 30;
+
+/** Branches no remote command or cleanup step may name; the hub and the machine refuse them again (fleet/commandSpec.mjs). */
+export const FLEET_PROTECTED_BRANCHES: readonly string[] = ['main', 'master', 'prod', 'production', 'staging'];
+/** After staging, how often and how long the board looks for the branch on the hub (the machine fetches every cycle). */
+export const FLEET_CLEANUP_READBACK_TRIES = 12;
+export const FLEET_CLEANUP_READBACK_GAP_MS = 10_000;
+/** While a cleanup waits for a machine to finish one command: how often the hub is read, and when the wait is given up (queued 10 min + running 15 min at most). */
+export const FLEET_CLEANUP_SETTLE_POLL_MS = 3000;
+export const FLEET_CLEANUP_SETTLE_TIMEOUT_MS = 20 * 60_000;
+export const FLEET_CLEANUP_MAX_STAGING = 50;
+export const FLEET_CLEANUP_MAX_JUNK = 100;

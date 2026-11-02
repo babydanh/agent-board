@@ -10,9 +10,12 @@ import {
   type FleetPullRequestLookup,
   runFleetBranchAction,
 } from './branchPullRequests.js';
+import { buildCleanupPlan, startCleanup } from './cleanupService.js';
 import { CloudControl, CloudControlError } from './cloudControl.js';
 import { createFleetCommandService, type FleetCommandInput, type FleetCommandService } from './commandQueue.js';
 import {
+  FLEET_CLEANUP_MAX_JUNK,
+  FLEET_CLEANUP_MAX_STAGING,
   FLEET_COMMAND_BRANCH,
   FLEET_COMMAND_PATH_MAX,
   FLEET_COMMAND_VERBS,
@@ -104,6 +107,8 @@ const FLEET_TYPES = new Set([
   'fleetBranchAction',
   'fleetCommandQueue',
   'fleetCommandHistoryRequest',
+  'fleetCleanupPlanRequest',
+  'fleetCleanupStart',
 ]);
 
 export function handleFleetMessage(
@@ -194,6 +199,16 @@ export function handleFleetMessage(
   }
   if (msg.type === 'fleetCommandQueue') {
     queueRemoteCommand(msg, requestId, send, context);
+    return true;
+  }
+  if (msg.type === 'fleetCleanupPlanRequest') {
+    buildCleanupPlan(context.fleet ?? defaultFleetHubClient)
+      .then((plan) => send({ type: 'fleetCleanupPlan', requestId, staging: plan.staging, junk: plan.junk, kept: plan.kept }))
+      .catch((error: unknown) => send(commandFailure(requestId, error)));
+    return true;
+  }
+  if (msg.type === 'fleetCleanupStart') {
+    runCleanupFromMessage(msg, requestId, send, context);
     return true;
   }
   if (msg.type === 'fleetCommandHistoryRequest') {
@@ -506,6 +521,65 @@ function queueRemoteCommand(
   (context.commands ?? defaultCommandService)
     .queue(command)
     .then(() => send({ type: 'fleetCommandResult', requestId, ok: true, code: 'success' }))
+    .catch((error: unknown) => send(commandFailure(requestId, error)));
+}
+
+interface CleanupPick { readonly machine: string; readonly path: string; readonly branch?: string }
+
+/** Reads `[{ machine, path, branch? }]` and returns null for anything that is not exactly that shape within the limits. */
+function readCleanupPicks(value: unknown, max: number, withBranch: boolean): CleanupPick[] | null {
+  if (!Array.isArray(value) || value.length > max) return null;
+  const picks: CleanupPick[] = [];
+  for (const entry of value as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) return null;
+    const { machine, path, branch } = entry as Record<string, unknown>;
+    if (typeof machine !== 'string' || !FLEET_MACHINE_NAME.test(machine)) return null;
+    if (typeof path !== 'string' || path === '' || path.length > FLEET_COMMAND_PATH_MAX) return null;
+    if (withBranch && (typeof branch !== 'string' || !FLEET_COMMAND_BRANCH.test(branch))) return null;
+    picks.push({ machine, path, ...(withBranch ? { branch: branch as string } : {}) });
+  }
+  return picks;
+}
+
+function runCleanupFromMessage(
+  msg: Record<string, unknown>,
+  requestId: string,
+  send: (message: ServerMessage) => void,
+  context: FleetCommandContext,
+): void {
+  const staging = readCleanupPicks(msg.staging, FLEET_CLEANUP_MAX_STAGING, true);
+  const junk = readCleanupPicks(msg.junk, FLEET_CLEANUP_MAX_JUNK, false);
+  if (staging === null || junk === null) {
+    send(commandResult(requestId, 'failed', FLEET_REASON_BAD_INPUT));
+    return;
+  }
+  startCleanup(
+    { staging: staging.map((pick) => ({ machine: pick.machine, path: pick.path, branch: pick.branch as string })), junk },
+    {
+      fleet: context.fleet ?? defaultFleetHubClient,
+      commands: context.commands ?? defaultCommandService,
+      progress: (event) => send({
+        type: 'fleetCleanupProgress',
+        requestId,
+        step: event.step,
+        machine: event.machine,
+        path: event.path,
+        branch: event.branch,
+        status: event.status,
+        ...(event.detail === undefined ? {} : { detail: event.detail }),
+      }),
+    },
+  )
+    .then((summary) => send({
+      type: 'fleetCleanupDone',
+      requestId,
+      ok: summary.ok,
+      staged: summary.staged,
+      cleaned: summary.cleaned,
+      failed: summary.failed,
+      skipped: summary.skipped,
+      ...(summary.refused === undefined ? {} : { refused: summary.refused }),
+    }))
     .catch((error: unknown) => send(commandFailure(requestId, error)));
 }
 

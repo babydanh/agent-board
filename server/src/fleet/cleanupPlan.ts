@@ -1,4 +1,5 @@
 import type { GitGuardWorktree } from '../../../core/src/messages.js';
+import { FLEET_PROTECTED_BRANCHES } from './constants.js';
 import type { FleetHubMachine } from './hubClient.js';
 
 /** One checkout the cleanup dialog may list. `machine` is the only machine a command for it may be queued to. */
@@ -27,12 +28,11 @@ export interface CleanupPlan {
 
 const RECENT_MINUTES = 24 * 60;
 const LOCAL_REPORTER_PREFIX = 'local-';
-const PROTECTED_BRANCHES: ReadonlySet<string> = new Set(['main', 'master', 'prod', 'production', 'staging']);
 
 const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
 const isProtected = (branch: string): boolean =>
-  PROTECTED_BRANCHES.has(branch.replace(/^refs\/heads\//, '').replace(/^(refs\/remotes\/)?origin\//, '').toLowerCase());
+  FLEET_PROTECTED_BRANCHES.includes(branch.replace(/^refs\/heads\//, '').replace(/^(refs\/remotes\/)?origin\//, '').toLowerCase());
 
 /** True when a live session (Claude/omp process or tmux pane) works in the checkout or below it. */
 function inUse(path: string, machine: FleetHubMachine): boolean {
