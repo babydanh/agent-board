@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -56,6 +56,34 @@ test('TC-LOCALAGENT-04: a real repository row names the branch and the dirty pat
   assert.equal(JSON.stringify(row).includes('two'), false);
 });
 
+test('TC-BASE-DEFAULT-04: a row measures against the repository default branch, not origin/main', () => {
+  const base = tmp('local-agent-default');
+  const origin = join(base, 'origin.git');
+  const seed = join(base, 'seed');
+  const clone = join(base, 'clone');
+  git(base, 'init', '-q', '--bare', '-b', 'master', origin);
+  git(base, 'init', '-q', '-b', 'master', seed);
+  writeFileSync(join(seed, 'a.txt'), 'one\n');
+  git(seed, 'add', 'a.txt');
+  git(seed, 'commit', '-q', '-m', 'master');
+  git(seed, 'push', '-q', origin, 'master');
+  git(seed, 'checkout', '-q', '--orphan', 'main');
+  git(seed, 'rm', '-q', '-rf', '.');
+  writeFileSync(join(seed, 'other.txt'), 'unrelated\n');
+  git(seed, 'add', 'other.txt');
+  git(seed, 'commit', '-q', '-m', 'unrelated main');
+  git(seed, 'push', '-q', origin, 'main');
+  git(base, 'clone', '-q', origin, clone);
+  git(clone, 'checkout', '-q', '-b', 'stable', 'origin/master');
+
+  const row = repoRow(clone);
+
+  assert.equal(row.origin_main, git(clone, 'rev-parse', 'origin/master').trim());
+  assert.notEqual(row.origin_main, git(clone, 'rev-parse', 'origin/main').trim());
+  assert.equal(row.merged, true);
+  assert.deepEqual(row.changes, []);
+});
+
 test('TC-LOCALAGENT-05: a worktree listed twice is reported once, and a missing folder is skipped', () => {
   const dir = tmp('local-agent-dedupe');
   const report = buildReport(
@@ -66,6 +94,21 @@ test('TC-LOCALAGENT-05: a worktree listed twice is reported once, and a missing 
   assert.deepEqual(report.repos.map((row) => row.path), [dir]);
   assert.equal(report.agent_id, 'local-pc');
   assert.equal(report.guard, null);
+});
+
+test('TC-LOCALAGENT-08: past the hub limit of 20 repos, the lanes with work are kept and idle ones dropped', () => {
+  const dir = tmp('local-agent-limit');
+  const paths = Array.from({ length: 30 }, (_, i) => join(dir, `lane-${i}`));
+  for (const path of paths) mkdirSync(path);
+  const busy = new Set(paths.slice(25));
+  const report = buildReport(
+    { id: 'local-pc', roots: ['r'] },
+    (path) => ({ path, repo: 'r', branch: 'b', dirty_files: busy.has(path) ? ['a.ts'] : [], changes: [] }),
+    () => paths,
+  );
+  assert.equal(report.repos.length, 20);
+  assert.equal(paths.slice(25).every((path) => report.repos.some((row) => row.path === path)), true);
+  assert.equal(report.repos_truncated, true);
 });
 
 test('TC-LOCALAGENT-06: the key is created once with owner-only mode and never replaced', () => {

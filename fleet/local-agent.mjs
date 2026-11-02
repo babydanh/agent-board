@@ -14,10 +14,12 @@ import { homedir, hostname } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { changedRanges, contentIn, dirtyPaths, fitReport, git, repoFromOrigin } from './agent.mjs';
+import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, repoFromOrigin } from './agent.mjs';
 import { signJwt } from './jwt.mjs';
 
 export const LOCAL_REPORT_INTERVAL_MS = 60_000;
+// The hub keeps at most this many repos per machine (fleet/hub.mjs); a longer list would silently lose its tail.
+const HUB_REPO_LIMIT = 20;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const DEFAULT_CONFIG = join(homedir(), '.pixel-agents', 'fleet-local.json');
 const DEFAULT_KEY = join(homedir(), '.pixel-agents', 'fleet-local-key.pem');
@@ -61,7 +63,9 @@ export function repoRow(path) {
   const counts = git(path, 'rev-list', '--left-right', '--count', '@{upstream}...HEAD').split(/\s+/);
   const githubRepo = repoFromOrigin(git(path, 'remote', 'get-url', 'origin'));
   const head = git(path, 'rev-parse', 'HEAD');
-  const originMain = git(path, 'rev-parse', 'origin/main');
+  const defaultRef = defaultBranch(path);
+  // Field name kept for the hub and the board: the value is the head of the default branch, whatever its name.
+  const originMain = git(path, 'rev-parse', defaultRef);
   const common = git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir');
   return {
     path,
@@ -72,7 +76,7 @@ export function repoRow(path) {
     ...(originMain === '' ? {} : { origin_main: originMain }),
     behind: Number(counts[0]) || 0,
     ahead: Number(counts[1]) || 0,
-    merged: contentIn(path, 'origin/main'),
+    merged: contentIn(path, defaultRef),
     staged: contentIn(path, 'origin/staging'),
     dirty_files: dirtyPaths(path),
     changes: changedRanges(path),
@@ -89,8 +93,14 @@ export function buildReport({ id, roots }, rowOf = repoRow, listOf = (root) => p
       repos.push(rowOf(path));
     }
   }
+  // Over the hub limit, keep the lanes with work (most edits first): idle checkouts cannot overlap anything.
+  const activity = (row) => (row.changes?.length ?? 0) + (row.dirty_files?.length ?? 0);
+  const kept = repos.length > HUB_REPO_LIMIT ? [...repos].sort((a, b) => activity(b) - activity(a)).slice(0, HUB_REPO_LIMIT) : repos;
   // No sessions, tmux or guard here: the board already reads local sessions and git risk from its own ledger.
-  return fitReport({ agent_id: id, disk_free_gb: null, skill_version: null, sessions: [], tmux: [], lavish: [], viec: [], repos, guard: null });
+  return fitReport({
+    agent_id: id, disk_free_gb: null, skill_version: null, sessions: [], tmux: [], lavish: [], viec: [], repos: kept, guard: null,
+    ...(kept.length < repos.length ? { repos_truncated: true } : {}),
+  });
 }
 
 export async function sendReport(config, report, fetcher = fetch) {

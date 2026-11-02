@@ -7228,6 +7228,8 @@ components:
           enum: [line, file]
         detail:
           type: string
+        baseDiffers:
+          type: boolean
 
     FleetCommandResultMessage:
       type: object

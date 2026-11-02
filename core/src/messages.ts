@@ -2418,6 +2418,7 @@ export interface FleetOverlapWarning {
   local: boolean;
   level?: AnonymousSchema_1334;
   detail?: string;
+  baseDiffers?: boolean;
 }
 
 export type AnonymousSchema_1334 = 'line' | 'file';

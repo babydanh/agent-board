@@ -146,13 +146,32 @@ export function contentIn(path, ref) {
   return Boolean(target) && git(path, 'merge-tree', '--write-tree', ref, 'HEAD').split('\n')[0] === target;
 }
 
+const LONG_LIVED_BRANCH = /^(main|master|develop|dev|stable|beta|release\/.+)$/;
+
 /**
- * Changed line ranges per file, in the coordinates of the merge base with origin/main, covering
+ * The repository's own default branch as a remote ref ("origin/master"), from origin/HEAD. Falls back to
+ * origin/main when origin/HEAD is absent or points at a ref that does not exist: some repos have an unrelated
+ * origin/main next to the real default branch, and measuring against it reports every file as changed.
+ */
+export function defaultBranch(path) {
+  const ref = git(path, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD');
+  if (!ref || !git(path, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`)) return 'origin/main';
+  return ref;
+}
+
+/**
+ * Changed line ranges per file, in the coordinates of the merge base with the default branch, covering
  * committed and uncommitted edits. Line numbers only, never content. Approximate: machines on
  * different bases can be a few lines off; the local overlap.py merge-tree check is exact.
  */
 export function changedRanges(path) {
-  const base = git(path, 'merge-base', 'origin/main', 'HEAD');
+  // A long-lived branch (main, release, stable...) is not work in flight: it carries commits its default branch lacks
+  // (release cherry-picks) and may trail its upstream, so only what it holds beyond the fork point with its own
+  // upstream counts: the upstream's newer commits are not this lane's edits.
+  const upstream = LONG_LIVED_BRANCH.test(git(path, 'branch', '--show-current'))
+    ? git(path, 'merge-base', '@{upstream}', 'HEAD')
+    : '';
+  const base = upstream || git(path, 'merge-base', defaultBranch(path), 'HEAD');
   if (!base) return [];
   const out = git(path, 'diff', '-U0', '--no-color', '--no-ext-diff', base, '--');
   const files = new Map();
@@ -216,7 +235,9 @@ function repos() {
     const counts = git(path, 'rev-list', '--left-right', '--count', '@{upstream}...HEAD').split(/\s+/);
     const github_repo = repoFromOrigin(git(path, 'remote', 'get-url', 'origin'));
     const head = git(path, 'rev-parse', 'HEAD');
-    const origin_main = git(path, 'rev-parse', 'origin/main');
+    const defaultRef = defaultBranch(path);
+    // Field name kept for the hub and the board: the value is the head of the default branch, whatever its name.
+    const origin_main = git(path, 'rev-parse', defaultRef);
     // The main checkout's folder name, also for worktrees (wt/backend-xep-san -> HethongBackendApi_...).
     const common = git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir');
     return {
@@ -228,7 +249,7 @@ function repos() {
       ...(origin_main === '' ? {} : { origin_main }),
       behind: Number(counts[0]) || 0,
       ahead: Number(counts[1]) || 0,
-      merged: contentIn(path, 'origin/main'),
+      merged: contentIn(path, defaultRef),
       staged: contentIn(path, 'origin/staging'),
       dirty_files: dirtyPaths(path),
       changes: changedRanges(path),

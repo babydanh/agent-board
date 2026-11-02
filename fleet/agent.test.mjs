@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
 import {
+  changedRanges,
+  defaultBranch,
   fitReport,
   parseLavish,
   parseTmux,
@@ -162,4 +165,94 @@ test('readSkillVersion returns the 12-char sync hash, or null when the file is m
   assert.equal(readSkillVersion(good), '9e7a47bf9348');
   assert.equal(readSkillVersion(bad), null);
   assert.equal(readSkillVersion(join(dir, 'missing')), null);
+});
+
+const gitIn = (cwd, ...args) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+
+/** A local "remote" whose default branch is master, plus an unrelated `main`, cloned and left on master. */
+function cloneWithUnrelatedMain() {
+  const base = mkdtempSync(join(tmpdir(), 'base-default-'));
+  const origin = join(base, 'origin.git');
+  const seed = join(base, 'seed');
+  const clone = join(base, 'clone');
+  gitIn(base, 'init', '-q', '--bare', '-b', 'master', origin);
+  gitIn(base, 'init', '-q', '-b', 'master', seed);
+  writeFileSync(join(seed, 'a.txt'), 'one\ntwo\n');
+  gitIn(seed, 'add', 'a.txt');
+  gitIn(seed, 'commit', '-q', '-m', 'master');
+  gitIn(seed, 'push', '-q', origin, 'master');
+  gitIn(seed, 'checkout', '-q', '--orphan', 'main');
+  gitIn(seed, 'rm', '-q', '-rf', '.');
+  writeFileSync(join(seed, 'other.txt'), 'unrelated\n');
+  gitIn(seed, 'add', 'other.txt');
+  gitIn(seed, 'commit', '-q', '-m', 'unrelated main');
+  gitIn(seed, 'push', '-q', origin, 'main');
+  gitIn(base, 'clone', '-q', origin, clone);
+  return clone;
+}
+
+test('TC-BASE-DEFAULT-01: a branch level with the real default branch reports no changes even when origin/main is unrelated', () => {
+  const clone = cloneWithUnrelatedMain();
+  gitIn(clone, 'checkout', '-q', '-b', 'stable', 'origin/master');
+  assert.equal(defaultBranch(clone), 'origin/master');
+  assert.deepEqual(changedRanges(clone), []);
+});
+
+test('TC-BASE-DEFAULT-02: a pushed but unmerged branch still lists its changed files', () => {
+  const clone = cloneWithUnrelatedMain();
+  gitIn(clone, 'checkout', '-q', '-b', 'feat', 'origin/master');
+  writeFileSync(join(clone, 'a.txt'), 'one\nTWO\n');
+  gitIn(clone, 'commit', '-q', '-am', 'change');
+  gitIn(clone, 'push', '-q', '-u', 'origin', 'feat');
+  assert.equal(gitIn(clone, 'rev-list', '--count', '@{upstream}..HEAD').trim(), '0');
+  assert.deepEqual(changedRanges(clone), [{ path: 'a.txt', ranges: [[2, 2]] }]);
+});
+
+/** A release branch like Flutter's `stable`: pushed with its own commits that are not in master, checked out level with its upstream. */
+function cloneOnReleaseBranch() {
+  const clone = cloneWithUnrelatedMain();
+  gitIn(clone, 'checkout', '-q', '-b', 'stable', 'origin/master');
+  writeFileSync(join(clone, 'a.txt'), 'one\ncherry-picked\n');
+  gitIn(clone, 'commit', '-q', '-am', 'cherry-pick only on stable');
+  gitIn(clone, 'push', '-q', '-u', 'origin', 'stable');
+  return clone;
+}
+
+test('TC-BASE-LONGLIVED-01: a long-lived branch level with its upstream reports no changes', () => {
+  const clone = cloneOnReleaseBranch();
+  assert.equal(gitIn(clone, 'rev-list', '--count', 'origin/master..HEAD').trim(), '1');
+  assert.deepEqual(changedRanges(clone), []);
+});
+
+test('TC-BASE-LONGLIVED-02: on a long-lived branch only uncommitted and unpushed edits count', () => {
+  const clone = cloneOnReleaseBranch();
+  writeFileSync(join(clone, 'b.txt'), 'new\n');
+  gitIn(clone, 'add', 'b.txt');
+  gitIn(clone, 'commit', '-q', '-m', 'unpushed');
+  writeFileSync(join(clone, 'a.txt'), 'one\ncherry-picked\nlocal edit\n');
+  const paths = changedRanges(clone).map((change) => change.path).sort();
+  assert.deepEqual(paths, ['a.txt', 'b.txt']);
+});
+
+test('TC-BASE-LONGLIVED-03: a long-lived branch that is behind its upstream reports no changes', () => {
+  const clone = cloneOnReleaseBranch();
+  const other = join(mkdtempSync(join(tmpdir(), 'base-behind-')), 'other');
+  gitIn(clone, 'clone', '-q', gitIn(clone, 'remote', 'get-url', 'origin').trim(), other);
+  gitIn(other, 'checkout', '-q', 'stable');
+  writeFileSync(join(other, 'c.txt'), 'newer upstream work\n');
+  gitIn(other, 'add', 'c.txt');
+  gitIn(other, 'commit', '-q', '-m', 'upstream moves on');
+  gitIn(other, 'push', '-q', 'origin', 'stable');
+  gitIn(clone, 'fetch', '-q');
+  assert.equal(gitIn(clone, 'rev-list', '--count', 'HEAD..@{upstream}').trim(), '1');
+  assert.deepEqual(changedRanges(clone), []);
+});
+
+test('TC-BASE-DEFAULT-03: without a usable origin/HEAD the default branch is origin/main', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'base-nohead-'));
+  gitIn(dir, 'init', '-q', '-b', 'main');
+  assert.equal(defaultBranch(dir), 'origin/main');
+  // origin/HEAD pointing at a ref that does not exist is as good as absent.
+  gitIn(dir, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/gone');
+  assert.equal(defaultBranch(dir), 'origin/main');
 });

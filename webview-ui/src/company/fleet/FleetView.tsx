@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { FleetBranchActionMessage, FleetBranchAnalysis, FleetLocalBranchSnapshot, FleetMachineSnapshot, FleetPullRequest, FleetTaskCreateMessage } from '../../../../core/src/messages.js';
+import type { FleetBranchActionMessage, FleetBranchAnalysis, FleetLocalBranchSnapshot, FleetMachineSnapshot, FleetOverlapWarning, FleetPullRequest, FleetTaskCreateMessage } from '../../../../core/src/messages.js';
 import { BusyNote } from '../components/BusyNote.js';
 import { openPendingTab } from './cloudLavish.js';
 import { MAX_SESSIONS_PER_MACHINE, pickMachine, projectMachines, randomSuffix, slugFromPrompt } from './cloudTaskPick.js';
@@ -142,17 +142,7 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
             ) : (
               <ul className="space-y-2">
                 {fleet.snapshot.overlaps.map((overlap) => (
-                  <li
-                    key={`${overlap.repo}\u0000${overlap.path}`}
-                    className="rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
-                  >
-                    <p className="break-all font-mono text-text">{overlap.repo}/{overlap.path}</p>
-                    <p className="mt-1 text-xs text-warning">
-                      {overlap.level === 'line' ? 'Trùng dòng' : 'Trùng tệp'} · Máy: {overlap.machines.join(', ')}
-                      {overlap.local ? ' · có phiên cục bộ' : ''}
-                    </p>
-                    {overlap.detail ? <p className="mt-1 break-all font-mono text-xs text-text-muted">{overlap.detail}</p> : null}
-                  </li>
+                  <FleetOverlapItem key={`${overlap.repo}\u0000${overlap.path}`} overlap={overlap} />
                 ))}
               </ul>
             )}
@@ -160,6 +150,27 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
         )}
       </div>
     </div>
+  );
+}
+
+export function FleetOverlapItem({ overlap }: { overlap: FleetOverlapWarning }) {
+  return (
+    <li className="rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
+      <p className="break-all font-mono text-text">{overlap.repo}/{overlap.path}</p>
+      <p className="mt-1 text-xs text-warning">
+        {overlap.level === 'line' ? 'Trùng dòng' : 'Trùng tệp'} · Máy: {overlap.machines.join(', ')}
+        {overlap.local ? ' · có phiên cục bộ' : ''}
+        {overlap.baseDiffers ? (
+          <span
+            className="ml-2 rounded border border-warning/30 px-1"
+            title="Hai máy đang ở bản origin/main khác nhau nên số dòng chỉ gần đúng"
+          >
+            khác nền
+          </span>
+        ) : null}
+      </p>
+      {overlap.detail ? <p className="mt-1 break-all font-mono text-xs text-text-muted">{overlap.detail}</p> : null}
+    </li>
   );
 }
 
