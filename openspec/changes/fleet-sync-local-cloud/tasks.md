@@ -35,9 +35,10 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
 
 ## 1. P1 — snapshots and the exact verdict
 
-- [ ] 1.1 Prove GitHub accepts the reserved ref namespace. Tiêu chí: push a one-commit ref `refs/wip/test/probe` to a throwaway repository, `git ls-remote` shows it, no workflow run starts, then delete it; result recorded in `design.md` decision 2 (keep refs, or fall back to `wip/**` branches).
+- [x] 1.1 Prove GitHub accepts the reserved ref namespace. Tiêu chí: push a one-commit ref `refs/wip/test/probe` to a throwaway repository, `git ls-remote` shows it, no workflow run starts, then delete it; result recorded in `design.md` decision 2 (keep refs, or fall back to `wip/**` branches).
   - Files: sửa `openspec/changes/fleet-sync-local-cloud/design.md` (record result only); throwaway repository chosen by the user.
   - Giao: decision "refs" or "branches". Nhận: none. Chủ file chung: none. Phụ thuộc: the user names the throwaway repository.
+  - Status 2026-11-02: done on `babydanh/omp-control-room` (the user approved it): create, `ls-remote`, shallow fetch of `+refs/wip/*` and delete all work, no workflow started, `main` unchanged; decision recorded in `design.md` decision 2 (keep refs). Open: a forced rewrite of a wip ref was refused by the permission classifier and is unproven.
 - [x] 1.2 Secret filter module. Tiêu chí: `node --test fleet/snapshotFilter.test.mjs` exit 0 with TC-SNAPFILTER-01..04 (env file, key file, over 50 MB, token in added line → each omitted and listed).
   - Files: tạo `fleet/snapshotFilter.mjs`, `fleet/snapshotFilter.test.mjs`.
   - Giao: `filterSnapshotFiles(files: {path, size, addedText}[]): { keep: string[], omitted: { path, reason }[] }`. Nhận: patterns copied from `~/.omp/scripts/backup-push.py` (comment names the source).
