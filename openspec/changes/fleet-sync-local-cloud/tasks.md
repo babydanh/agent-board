@@ -27,6 +27,10 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
   - Files: NGOÀI REPO (`/data/home` agent copy on each machine, via `install-agent.sh <id> <hub>` which keeps the key).
   - Giao/Nhận: none. Chủ file chung: none. Phụ thuộc: 0.1 merged; the user approves the deployment.
   - Status 2026-11-02: `danh` and `danh1` verified (agent files match the repo, timer active, `flutter-3.47.9` ahead 0 and dirty 0 on the hub). Still open: `danh3` unreachable (`host_unavailable`), `danh4`–`danh6` suspended (not woken), `danh2` has no `~/.fleet` (no timer).
+- [ ] 0.6 Light local scan (added 2026-11-02 after the first installed reporter froze the machine: ~15–20 `git` calls per checkout, 63 checkouts, every 60 s, and each call opened a console window — fixed in `086d662d` with `windowsHide`). Tiêu chí: `node --test fleet/local-agent.test.mjs fleet/git-window.test.mjs` exit 0 with TC-LIGHT-01 (a clean checkout level with its default branch runs one `git status` and nothing else), TC-LIGHT-02 (HEAD and index unchanged since the last cycle and no live session in it → zero `git` calls), TC-LIGHT-03 (the report is posted only when it differs from the last one, plus a heartbeat every 5 minutes), TC-LIGHT-04 (the loop runs at below-normal priority and one cycle never overlaps the next); measured `git` calls per idle cycle is under 20 on the 63 real checkouts.
+  - Files: sửa `fleet/local-agent.mjs`, `fleet/local-agent.test.mjs`; `fleet/agent.mjs` only if a helper must be exported.
+  - Giao: none. Nhận: live-session checkouts from the activity ledger read-only (`~/.omp/agent/activity.db`), no write. Chủ file chung: `fleet/local-agent.mjs` (also edited by P1.3 and P2.2, so they wait for this). Phụ thuộc: 0.4.
+  - Gate: the reporter is not installed in the background again (4.1 stays open) until the measured count above is shown to the user.
 
 ## 1. P1 — snapshots and the exact verdict
 
@@ -79,7 +83,7 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
 
 ## 3. P3 — "Dọn & lên staging"
 
-- [ ] 3.1 Scan and classification. Tiêu chí: `npm run test:server` exit 0 with TC-CLEAN-CLASS-01 (merged, empty or prunable → junk; dirty or unpushed → real), TC-CLEAN-CLASS-02 (unknown state → real).
+- [ ] 3.1 Scan and classification. Tiêu chí: `npm run test:server` exit 0 with TC-CLEAN-CLASS-01 (merged, empty or prunable → junk; dirty or unpushed → real), TC-CLEAN-CLASS-02 (unknown state → real), TC-CLEAN-CLASS-03 (a checkout with a live session or changed in the last 24 hours → real, design decision 12), TC-CLEAN-CLASS-04 (cleanup is queued only to the machine that owns the checkout).
   - Files: tạo `server/src/fleet/cleanupPlan.ts`, test `server/__tests__/fleetCleanupPlan.test.ts`; reads guard data already in the hub rows.
   - Giao: `planCleanup(machines): { staging: Item[], junk: Item[] }`. Nhận: guard rows (`mergedToMain`, `unpushed`, `dirty`, `prunable`, `backedUp`).
   - Chủ file chung: owns `cleanupPlan.ts`. Phụ thuộc: 2.3.
@@ -87,7 +91,7 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
   - Files: tạo `server/src/fleet/cleanupRunner.ts`, test `server/__tests__/fleetCleanupRunner.test.ts`; sửa `server/src/fleet/handler.ts`.
   - Giao: messages `fleetCleanupPlan`, `fleetCleanupStart`, `fleetCleanupProgress`. Nhận: `planCleanup`, command API from 2.3.
   - Chủ file chung: `core/asyncapi.yaml` owned here for P3. Phụ thuộc: 3.1, 2.2.
-- [ ] 3.3 Board screen with two unticked lists and live progress. Tiêu chí: `npm run test:webview` exit 0 with TC-CLEAN-UI-01 (items start unticked), TC-CLEAN-UI-02 (start disabled with nothing ticked), TC-CLEAN-UI-03 (final message says production needs the user's instruction).
+- [ ] 3.3 Board screen with two unticked lists and live progress. Tiêu chí: `npm run test:webview` exit 0 with TC-CLEAN-UI-01 (items start unticked), TC-CLEAN-UI-02 (start disabled with nothing ticked), TC-CLEAN-UI-03 (final message says production needs the user's instruction), TC-CLEAN-UI-04 (two ticked branches whose verdict is `conflict` or `incomplete` disable Start and name the pair, design decision 13; staging runs one branch at a time, each read back before the next).
   - Files: tạo `webview-ui/src/company/fleet/CleanupDialog.tsx`, test `webview-ui/test/fleetCleanup.test.ts`; sửa `webview-ui/src/company/fleet/FleetView.tsx`.
   - Giao: none. Nhận: messages from 3.2. Chủ file chung: `FleetView.tsx`. Phụ thuộc: 3.2.
 - [ ] 3.4 Dry run on real data. Tiêu chí: with the user ticking one real branch and one junk worktree, the branch appears on staging (hub row `staged: true`), the junk worktree is gone after a verified backup, `main` is unchanged (`git ls-remote` shows the same SHA before and after).
