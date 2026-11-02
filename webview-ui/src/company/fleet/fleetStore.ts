@@ -5,7 +5,11 @@ import type {
   ClientMessage,
   FleetBranchActionMessage,
   FleetCloudCommentSendMessage,
+  FleetCommandHistoryMessage,
+  FleetCommandHistoryRequestMessage,
+  FleetCommandQueueMessage,
   FleetCommandResultMessage,
+  FleetCommandRow,
   FleetDiffMessage,
   FleetDiffRequestMessage,
   FleetHistoryMessage,
@@ -38,7 +42,8 @@ export type FleetServerMessage =
   | FleetTaskCleanedMessage
   | FleetLavishOpenedMessage
   | FleetDiffMessage
-  | FleetHistoryMessage;
+  | FleetHistoryMessage
+  | FleetCommandHistoryMessage;
 
 /** A cloud tmux session the board is showing in its terminal panel. */
 export interface FleetTerminal {
@@ -50,7 +55,7 @@ export interface FleetTerminal {
 /** One in-flight action (open a terminal / create a task); only the latest one is tracked. */
 export interface FleetAction {
   readonly requestId: string;
-  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'restart' | 'diff' | 'history' | 'comment' | 'branch';
+  readonly kind: 'terminal' | 'task' | 'clean' | 'wake' | 'lavish' | 'lavishDelete' | 'restart' | 'diff' | 'history' | 'comment' | 'branch' | 'command' | 'commands';
   readonly machine: string;
   readonly session: string;
   /** Epoch ms the request was sent; the board shows the wait from it. */
@@ -76,6 +81,8 @@ export interface FleetState {
   readonly diff: Omit<FleetDiffMessage, 'type' | 'requestId'> | null;
   /** One session's scrollback fetched once, scrolled locally (no network round trip per step) until closed. */
   readonly history: Omit<FleetHistoryMessage, 'type' | 'requestId'> | null;
+  /** The hub's recent remote commands, once asked for; null until then. */
+  readonly commands: readonly FleetCommandRow[] | null;
 }
 
 export interface FleetStoreOptions {
@@ -113,6 +120,9 @@ export interface FleetStore {
   sendCloudComment: (comment: Omit<FleetCloudCommentSendMessage, 'type' | 'requestId'>) => void;
   runBranchAction: (action: Omit<FleetBranchActionMessage, 'type' | 'requestId'>) => void;
   sendLocalCiFailureComment: (checkout: string, receivingSessionId: string, pr: FleetPullRequest) => void;
+  /** Queues one fixed remote command through the board's command key; the history is asked again once the hub accepted it. */
+  queueCommand: (command: Omit<FleetCommandQueueMessage, 'type' | 'requestId'>) => void;
+  requestCommands: () => void;
   closeDiff: () => void;
 }
 
@@ -145,6 +155,7 @@ export function createInitialFleetState(): FleetState {
     cleanedTask: null,
     diff: null,
     history: null,
+    commands: null,
   };
 }
 
@@ -157,7 +168,8 @@ export function isFleetServerMessage(message: ServerMessage): message is FleetSe
     message.type === 'fleetTaskCleaned' ||
     message.type === 'fleetLavishOpened' ||
     message.type === 'fleetDiff' ||
-    message.type === 'fleetHistory'
+    message.type === 'fleetHistory' ||
+    message.type === 'fleetCommandHistory'
   );
 }
 
@@ -203,7 +215,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
   }
 
   function act(
-    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetLavishDeleteMessage | FleetSessionRestartMessage | FleetDiffRequestMessage | FleetHistoryRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage,
+    request: FleetTerminalOpenMessage | FleetTaskCreateMessage | FleetTaskCleanMessage | FleetMachineWakeMessage | FleetLavishOpenMessage | FleetLavishDeleteMessage | FleetSessionRestartMessage | FleetDiffRequestMessage | FleetHistoryRequestMessage | FleetCloudCommentSendMessage | FleetBranchActionMessage | FleetCommandQueueMessage | FleetCommandHistoryRequestMessage,
     kind: FleetAction['kind'],
     session: string,
   ): void {
@@ -214,7 +226,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
       action: {
         requestId: request.requestId,
         kind,
-        machine: request.type === 'fleetBranchAction' ? 'local' : request.machine,
+        machine: request.type === 'fleetBranchAction' ? 'local' : request.type === 'fleetCommandHistoryRequest' ? 'hub' : request.machine,
         session,
         startedAt: Date.now(),
       },
@@ -251,6 +263,8 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
       commit({ ...state, action: null, diff: { machine: message.machine, path: message.path, text: message.text, truncated: message.truncated } });
     } else if (message.type === 'fleetHistory') {
       commit({ ...state, action: null, history: { machine: message.machine, session: message.session, text: message.text, truncated: message.truncated } });
+    } else if (message.type === 'fleetCommandHistory') {
+      commit({ ...state, action: null, commands: message.commands });
     } else if (message.type === 'fleetTaskCreated') {
       commit({ ...state, action: null, createdTask: { machine: message.machine, session: message.session } });
     } else if (message.type === 'fleetTaskCleaned') {
@@ -258,6 +272,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     } else if (message.type === 'fleetCommandResult') {
       if (action.kind === 'lavish') settleTab(null);
       commit({ ...state, action: null, actionError: message.ok ? null : message.reason ?? SEND_FAILED_REASON });
+      if (action.kind === 'command' && message.ok) act({ type: 'fleetCommandHistoryRequest', requestId: newRequestId() }, 'commands', 'lịch sử lệnh');
       if ((action.kind === 'branch' || action.kind === 'wake' || action.kind === 'lavishDelete') && message.ok) {
         transmit({ type: 'fleetRequest', requestId: newRequestId() });
       }
@@ -390,6 +405,12 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
         const detail = error instanceof Error ? error.message : String(error);
         commit({ ...state, actionError: detail === TRANSPORT_DISCONNECTED_ERROR ? NO_CONNECTION_REASON : SEND_FAILED_REASON });
       }
+    },
+    queueCommand: (command) => {
+      act({ type: 'fleetCommandQueue', requestId: newRequestId(), ...command }, 'command', command.verb);
+    },
+    requestCommands: () => {
+      act({ type: 'fleetCommandHistoryRequest', requestId: newRequestId() }, 'commands', 'lịch sử lệnh');
     },
     closeDiff: () => commit({ ...state, diff: null }),
   };

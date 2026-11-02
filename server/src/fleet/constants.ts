@@ -1,4 +1,11 @@
 export const FLEET_CONFIG_PATH_SEGMENTS = ['.pixel-agents', 'fleet.json'] as const;
+/** The board's own key for queuing remote commands, separate from its read key; the hub knows it as this id with role `command`. */
+export const FLEET_COMMAND_KEY_PATH_SEGMENTS = ['.pixel-agents', 'fleet-command-key.pem'] as const;
+export const FLEET_COMMAND_ISSUER = 'board-command';
+/** Same rules as fleet/commandSpec.mjs; the hub and the machine check them again. */
+export const FLEET_COMMAND_VERBS = ['snapshot-push', 'clean-worktree', 'run-tests', 'staging-sync'] as const;
+export const FLEET_COMMAND_BRANCH = /^[A-Za-z0-9._/-]{1,100}$/;
+export const FLEET_COMMAND_PATH_MAX = 500;
 export const FLEET_FETCH_TIMEOUT_MS = 10_000;
 export const FLEET_CACHE_MS = 15_000;
 export const FLEET_STALE_AFTER_MS = 10 * 60_000;

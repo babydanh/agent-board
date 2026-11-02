@@ -13,4 +13,6 @@ export const FLEET_ACTION_LABEL: Record<FleetAction['kind'], string> = {
   history: 'Đang lấy lịch sử',
   comment: 'Đang gửi tin tới phiên',
   branch: 'Đang cập nhật nhánh',
+  command: 'Đang xếp lệnh',
+  commands: 'Đang tải lịch sử lệnh',
 };

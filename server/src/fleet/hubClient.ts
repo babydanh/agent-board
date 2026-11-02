@@ -99,14 +99,14 @@ export class FleetUnavailableError extends Error {
 
 const JWT_HEADER = Buffer.from(JSON.stringify({ alg: 'EdDSA', typ: 'JWT' })).toString('base64url');
 
-/** Signs a short-lived read token locally. The private key and token never leave this module. */
-function signReadToken(privateKeyPem: string, nowMs: number): string {
+/** Signs a short-lived token locally for one hub role. The private key never leaves the process. */
+export function signHubToken(privateKeyPem: string, nowMs: number, issuer: string, role: 'read' | 'command'): string {
   const issuedAt = Math.floor(nowMs / 1000);
   const payload = Buffer.from(
     JSON.stringify({
-      iss: 'board',
+      iss: issuer,
       aud: 'fleet-hub',
-      role: 'read',
+      role,
       iat: issuedAt,
       exp: issuedAt + 300,
       jti: randomUUID(),
@@ -146,7 +146,7 @@ export function createFleetHubClient(options: FleetHubClientOptions = {}): Fleet
 
   async function fetchFromHub(config: FleetConfig): Promise<FleetHubResponse> {
     const privateKeyPem = await readFile(config.keyPath, 'utf8');
-    const token = signReadToken(privateKeyPem, now());
+    const token = signHubToken(privateKeyPem, now(), 'board', 'read');
     const response = await fetcher(new URL('/v1/fleet', config.hub), {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },

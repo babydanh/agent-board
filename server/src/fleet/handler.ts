@@ -11,7 +11,12 @@ import {
   runFleetBranchAction,
 } from './branchPullRequests.js';
 import { CloudControl, CloudControlError } from './cloudControl.js';
+import { createFleetCommandService, type FleetCommandInput, type FleetCommandService } from './commandQueue.js';
 import {
+  FLEET_COMMAND_BRANCH,
+  FLEET_COMMAND_PATH_MAX,
+  FLEET_COMMAND_VERBS,
+  FLEET_MACHINE_NAME,
   FLEET_REASON_BAD_INPUT,
   FLEET_REASON_COMMAND_FAILED,
   FLEET_REASON_HUB_FALLBACK,
@@ -31,6 +36,7 @@ import { readExpectedSkillVersion } from './skillVersion.js';
 const FALLBACK_REQUEST_ID = '00000000-0000-4000-8000-000000000000';
 const LEDGER_WAIT_MS = 5000;
 const defaultFleetHubClient = createFleetHubClient();
+const defaultCommandService = createFleetCommandService();
 const defaultPullRequestGit = createGitRunner(runProcess);
 const defaultPullRequests = createFleetPullRequestLookup();
 const defaultBranchAnalysis = createFleetBranchAnalysisService();
@@ -41,6 +47,7 @@ const promptWatches = new WeakMap<CloudControl, ReturnType<typeof createPromptWa
 
 export interface FleetCommandContext {
   readonly fleet?: FleetHubClient;
+  readonly commands?: FleetCommandService;
   readonly cloud?: CloudControl;
   readonly ledger: { getView: () => Promise<LedgerView> } | null;
   readonly git?: GitRunner;
@@ -95,6 +102,8 @@ const FLEET_TYPES = new Set([
   'fleetHistoryRequest',
   'fleetCloudCommentSend',
   'fleetBranchAction',
+  'fleetCommandQueue',
+  'fleetCommandHistoryRequest',
 ]);
 
 export function handleFleetMessage(
@@ -181,6 +190,17 @@ export function handleFleetMessage(
   }
   if (msg.type === 'fleetBranchAction') {
     runLocalBranchAction(msg, requestId, send, context);
+    return true;
+  }
+  if (msg.type === 'fleetCommandQueue') {
+    queueRemoteCommand(msg, requestId, send, context);
+    return true;
+  }
+  if (msg.type === 'fleetCommandHistoryRequest') {
+    (context.commands ?? defaultCommandService)
+      .history()
+      .then((commands) => send({ type: 'fleetCommandHistory', requestId, commands }))
+      .catch((error: unknown) => send(commandFailure(requestId, error)));
     return true;
   }
 
@@ -460,6 +480,42 @@ function runLocalBranchAction(
         : commandResult(requestId, 'failed', result.reason));
     })
     .catch(() => send(commandResult(requestId, 'failed', FLEET_REASON_COMMAND_FAILED)));
+}
+
+/** Validates the fixed command shape again (the hub and the machine check it too) and queues it through the board's command key. */
+function queueRemoteCommand(
+  msg: Record<string, unknown>,
+  requestId: string,
+  send: (message: ServerMessage) => void,
+  context: FleetCommandContext,
+): void {
+  const verb = FLEET_COMMAND_VERBS.find((candidate) => candidate === msg.verb);
+  const machine = typeof msg.machine === 'string' ? msg.machine : '';
+  const pathOk = msg.path === undefined || (typeof msg.path === 'string' && msg.path !== '' && msg.path.length <= FLEET_COMMAND_PATH_MAX);
+  const branchOk = msg.branch === undefined || (typeof msg.branch === 'string' && FLEET_COMMAND_BRANCH.test(msg.branch));
+  if (verb === undefined || !FLEET_MACHINE_NAME.test(machine) || !pathOk || !branchOk) {
+    send(commandResult(requestId, 'failed', FLEET_REASON_BAD_INPUT));
+    return;
+  }
+  const command: FleetCommandInput = {
+    machine,
+    verb,
+    ...(typeof msg.path === 'string' ? { path: msg.path } : {}),
+    ...(typeof msg.branch === 'string' ? { branch: msg.branch } : {}),
+  };
+  (context.commands ?? defaultCommandService)
+    .queue(command)
+    .then(() => send({ type: 'fleetCommandResult', requestId, ok: true, code: 'success' }))
+    .catch((error: unknown) => send(commandFailure(requestId, error)));
+}
+
+/** The hub's own words reach the board for a refused command; anything else stays generic. */
+function commandFailure(requestId: string, error: unknown): ServerMessage {
+  if (error instanceof FleetUnavailableError) return commandResult(requestId, 'unavailable', FLEET_REASON_UNAVAILABLE);
+  if (error instanceof Error && (error.name === 'FleetCommandKeyError' || error.message.startsWith('Hub từ chối lệnh'))) {
+    return commandResult(requestId, 'failed', error.message);
+  }
+  return commandResult(requestId, 'failed', FLEET_REASON_COMMAND_FAILED);
 }
 
 function failure(requestId: string, error: unknown): ServerMessage {

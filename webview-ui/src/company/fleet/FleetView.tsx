@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { FleetBranchActionMessage, FleetBranchAnalysis, FleetLocalBranchSnapshot, FleetMachineSnapshot, FleetOverlapWarning, FleetPullRequest, FleetTaskCreateMessage } from '../../../../core/src/messages.js';
+import type { FleetBranchActionMessage, FleetBranchAnalysis, FleetCommandRow, FleetLocalBranchSnapshot, FleetMachineSnapshot, FleetOverlapWarning, FleetPullRequest, FleetTaskCreateMessage } from '../../../../core/src/messages.js';
 import { BusyNote } from '../components/BusyNote.js';
 import { openPendingTab } from './cloudLavish.js';
 import { MAX_SESSIONS_PER_MACHINE, pickMachine, projectMachines, randomSuffix, slugFromPrompt } from './cloudTaskPick.js';
@@ -148,8 +148,59 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
             )}
           </section>
         )}
+        {fleet.snapshot !== null && (
+          <section aria-labelledby="fleet-commands-title" className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 id="fleet-commands-title" className="text-sm font-semibold text-text">Lệnh từ xa</h2>
+              <button
+                type="button"
+                disabled={fleet.action !== null}
+                onClick={() => fleetStore.requestCommands()}
+                className="company-btn company-btn-sm company-btn-ghost"
+              >
+                {fleet.commands === null ? 'Tải lịch sử' : 'Làm mới lịch sử'}
+              </button>
+            </div>
+            <FleetCommandHistory commands={fleet.commands} />
+          </section>
+        )}
       </div>
     </div>
+  );
+}
+
+const COMMAND_STATE_LABEL: Record<FleetCommandRow['state'], { text: string; className: string }> = {
+  queued: { text: 'Đang chờ', className: 'text-text-muted' },
+  delivered: { text: 'Đang chạy', className: 'text-warning' },
+  success: { text: 'Thành công', className: 'text-success' },
+  failed: { text: 'Thất bại', className: 'text-danger' },
+  refused: { text: 'Bị từ chối', className: 'text-danger' },
+  expired: { text: 'Hết hạn', className: 'text-text-muted' },
+};
+
+/** The hub's recent remote commands: what was asked, of which machine, how it ended and what the machine said. */
+export function FleetCommandHistory({ commands }: { commands: readonly FleetCommandRow[] | null }) {
+  if (commands === null) return <p className="text-sm text-text-muted">Chưa tải lịch sử lệnh.</p>;
+  if (commands.length === 0) return <p className="text-sm text-text-muted">Chưa có lệnh nào.</p>;
+  return (
+    <ul className="space-y-1">
+      {commands.map((command) => {
+        const state = COMMAND_STATE_LABEL[command.state];
+        return (
+          <li key={command.id} className="rounded border border-hairline bg-well px-3 py-2 text-xs">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-mono font-semibold text-text">{command.verb}</span>
+              <span className="font-mono text-text-muted">{command.machine}</span>
+              <span className={state.className}>{state.text}</span>
+            </div>
+            {(command.branch ?? command.path) !== undefined && (
+              <p className="mt-1 break-all font-mono text-text-muted">{command.branch ?? command.path}</p>
+            )}
+            {command.detail !== undefined && <p className="mt-1 break-words text-text">{command.detail}</p>}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

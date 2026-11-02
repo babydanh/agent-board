@@ -207,6 +207,8 @@ export const FLEET_ACTION_TIMEOUT_MS = {
   history: 90_000,
   comment: 60_000,
   branch: 150_000,
+  command: 60_000,
+  commands: 60_000,
 } as const;
 
 /** After this long a visible wait says it is slower than usual and offers to stop waiting. */

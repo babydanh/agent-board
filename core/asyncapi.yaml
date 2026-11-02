@@ -171,6 +171,7 @@ components:
         - $ref: '#/components/schemas/FleetLavishOpenedMessage'
         - $ref: '#/components/schemas/FleetDiffMessage'
         - $ref: '#/components/schemas/FleetHistoryMessage'
+        - $ref: '#/components/schemas/FleetCommandHistoryMessage'
         # Share (privileged; view-only links to cloud terminals)
         - $ref: '#/components/schemas/ShareResultMessage'
         # Project tree (privileged; project, checkout and session data)
@@ -302,6 +303,8 @@ components:
         - $ref: '#/components/schemas/FleetSessionRestartMessage'
         - $ref: '#/components/schemas/FleetDiffRequestMessage'
         - $ref: '#/components/schemas/FleetHistoryRequestMessage'
+        - $ref: '#/components/schemas/FleetCommandQueueMessage'
+        - $ref: '#/components/schemas/FleetCommandHistoryRequestMessage'
         - $ref: '#/components/schemas/FleetCloudCommentSendMessage'
         - $ref: '#/components/schemas/FleetBranchActionMessage'
         # Project tree (privileged; tree CRUD, diffs, comments, settings and sessions)
@@ -6708,6 +6711,42 @@ components:
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
 
+    FleetCommandQueueMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, machine, verb]
+      description: Queue one fixed remote command for a machine through the hub with the board's command key (privileged); answered by a fleetCommandResult. The hub and the machine refuse main, master, prod and production again.
+      properties:
+        type:
+          const: fleetCommandQueue
+        requestId:
+          type: string
+          format: uuid
+        machine:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        verb:
+          $ref: '#/components/schemas/FleetCommandVerb'
+        path:
+          type: string
+          minLength: 1
+          maxLength: 500
+        branch:
+          type: string
+          pattern: '^[A-Za-z0-9._/-]{1,100}$'
+
+    FleetCommandHistoryRequestMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId]
+      description: Read the hub's recent remote commands with their state and result (privileged, read-only).
+      properties:
+        type:
+          const: fleetCommandHistoryRequest
+        requestId:
+          type: string
+          format: uuid
+
     FleetCloudCommentSendMessage:
       type: object
       additionalProperties: false
@@ -6807,6 +6846,54 @@ components:
           type: string
         truncated:
           type: boolean
+
+    FleetCommandVerb:
+      type: string
+      enum: [snapshot-push, clean-worktree, run-tests, staging-sync]
+
+    FleetCommandState:
+      type: string
+      enum: [queued, delivered, success, failed, refused, expired]
+
+    FleetCommandRow:
+      type: object
+      additionalProperties: false
+      required: [id, machine, verb, state, createdAt]
+      properties:
+        id:
+          type: string
+        machine:
+          type: string
+        verb:
+          $ref: '#/components/schemas/FleetCommandVerb'
+        path:
+          type: string
+        branch:
+          type: string
+        state:
+          $ref: '#/components/schemas/FleetCommandState'
+        createdAt:
+          type: number
+        finishedAt:
+          type: number
+        detail:
+          type: string
+
+    FleetCommandHistoryMessage:
+      type: object
+      additionalProperties: false
+      required: [type, requestId, commands]
+      description: The hub's recent remote commands, newest first, with the machine's own answer once it ran.
+      properties:
+        type:
+          const: fleetCommandHistory
+        requestId:
+          type: string
+          format: uuid
+        commands:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetCommandRow'
 
     FleetSnapshotMessage:
       type: object
