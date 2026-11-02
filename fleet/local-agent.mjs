@@ -7,17 +7,20 @@
 //   `roots` are main checkouts; every worktree of each root is reported.
 // Usage: node fleet/local-agent.mjs --gen-key   create the key pair, print the PUBLIC key to register on the hub (role report)
 //        node fleet/local-agent.mjs --once      send one report
-//        node fleet/local-agent.mjs --loop      send one report every 60 s until stopped
+//        node fleet/local-agent.mjs --loop      send one report every 2 minutes until stopped
 import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir, hostname } from 'node:os';
+import { constants as osConstants, homedir, hostname, setPriority } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, repoFromOrigin } from './agent.mjs';
 import { signJwt } from './jwt.mjs';
+import { createLaneScanner } from './laneScan.mjs';
 
-export const LOCAL_REPORT_INTERVAL_MS = 60_000;
+// The hub calls a machine stale after 10 minutes of silence; 2 minutes keeps overlap warnings fresh at a fraction of
+// the old 60 s scan cost, because unchanged checkouts now cost one `git status` each (see laneScan.mjs).
+export const LOCAL_REPORT_INTERVAL_MS = 120_000;
 // The hub keeps at most this many repos per machine (fleet/hub.mjs); a longer list would silently lose its tail.
 const HUB_REPO_LIMIT = 20;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -83,7 +86,9 @@ export function repoRow(path) {
   };
 }
 
-export function buildReport({ id, roots }, rowOf = repoRow, listOf = (root) => parseWorktreeList(git(root, 'worktree', 'list', '--porcelain'))) {
+const scanLane = createLaneScanner({ full: repoRow });
+
+export function buildReport({ id, roots }, rowOf = scanLane, listOf = (root) => parseWorktreeList(git(root, 'worktree', 'list', '--porcelain'))) {
   const seen = new Set();
   const repos = [];
   for (const root of roots) {
@@ -141,6 +146,8 @@ async function main(args) {
       process.exitCode = 1;
     }
   };
+  // A background scan must never compete with the user's own work; child git processes inherit this priority.
+  if (args.includes('--loop')) { try { setPriority(osConstants.priority.PRIORITY_BELOW_NORMAL); } catch { /* keep the default */ } }
   await once();
   // One report at a time: a slow scan must not overlap the next one.
   if (args.includes('--loop')) for (;;) { await new Promise((resolve) => setTimeout(resolve, LOCAL_REPORT_INTERVAL_MS)); await once(); }
