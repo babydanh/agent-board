@@ -1,9 +1,13 @@
 // fleet-hub: cloud machines POST signed reports; the board GETs the fleet. Read-only view, no code content.
 // Env: FLEET_KEYS (path to keys.json: { agent_id: { pub: PEM, role: "report"|"read" } }),
 //      FLEET_STATE (path to persisted latest reports), PORT (default 18430), HOST (default 127.0.0.1).
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+// Roles: report (a machine), read (the board's view), command (only the board's second key may queue commands).
+// Commands ride the report round trip: the reply carries them, the next report carries the results.
+import { randomUUID } from 'node:crypto';
+import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 
+import { commandError } from './commandSpec.mjs';
 import { verifyJwt } from './jwt.mjs';
 
 const MAX_BODY = 64 * 1024;
@@ -110,6 +114,15 @@ const MAX_RANGES = 20;
 const ONLINE_WITHIN_MS = 10 * 60 * 1000;
 const LOCAL_REPORTER_PREFIX = 'local-';
 
+const COMMAND_TTL_MS = 10 * 60 * 1000;
+const DELIVERED_TTL_MS = 15 * 60 * 1000;
+const MAX_COMMANDS = 500;
+const MAX_QUEUED_PER_MACHINE = 20;
+const MAX_RESULTS = 20;
+const MAX_DETAIL = 500;
+const RESULT_STATUSES = new Set(['success', 'failed', 'refused']);
+const TARGET_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
 const isLine = (n) => Number.isInteger(n) && n >= 1;
 
 /** Verdicts a judge machine posts (fleet/judge.mjs). Bad entries are dropped one by one, never the whole report. */
@@ -181,11 +194,99 @@ export function createHub({ keysPath, statePath, now = () => Date.now(), started
     renameSync(`${statePath}.tmp`, statePath);
   };
 
+  const commandsPath = statePath ? `${statePath}.commands.json` : null;
+  const auditPath = statePath ? `${statePath}.audit.jsonl` : null;
+  const commands = commandsPath && existsSync(commandsPath) ? JSON.parse(readFileSync(commandsPath, 'utf8')) : [];
+  let commandsDirty = false;
+  // Every state change is one append-only audit line: who, what, for which machine, when.
+  const setState = (cmd, state, by, extra = {}) => {
+    Object.assign(cmd, extra, { state });
+    commandsDirty = true;
+    if (auditPath) appendFileSync(auditPath, `${JSON.stringify({ at: now(), id: cmd.id, state, by, target: cmd.target, verb: cmd.verb })}\n`, { mode: 0o600 });
+  };
+  const flushCommands = () => {
+    if (!commandsPath || !commandsDirty) return;
+    commandsDirty = false;
+    if (commands.length > MAX_COMMANDS) commands.splice(0, commands.length - MAX_COMMANDS);
+    writeFileSync(`${commandsPath}.tmp`, JSON.stringify(commands), { mode: 0o600 });
+    renameSync(`${commandsPath}.tmp`, commandsPath);
+  };
+  const expireCommands = () => {
+    const at = now();
+    for (const cmd of commands) {
+      if (cmd.state === 'queued' && cmd.expires_at <= at) setState(cmd, 'expired', 'hub', { finished_at: at });
+      else if (cmd.state === 'delivered' && cmd.delivered_at + DELIVERED_TTL_MS <= at) setState(cmd, 'expired', 'hub', { finished_at: at });
+    }
+  };
+  // A result counts once, and only from the machine the command was delivered to.
+  const applyResults = (agentId, results) => {
+    if (!Array.isArray(results)) return;
+    for (const item of results.slice(0, MAX_RESULTS)) {
+      if (!isRecord(item) || !RESULT_STATUSES.has(item.status) || typeof item.id !== 'string') continue;
+      const cmd = commands.find((c) => c.id === item.id);
+      if (!cmd || cmd.target !== agentId || cmd.state !== 'delivered') continue;
+      const detail = typeof item.detail === 'string' ? item.detail.slice(0, MAX_DETAIL) : '';
+      setState(cmd, item.status, agentId, { finished_at: now(), result: { status: item.status, detail } });
+    }
+  };
+  // One command at a time per machine: the oldest queued one goes out only when nothing is awaiting a result.
+  const deliverNext = (agentId) => {
+    if (commands.some((c) => c.target === agentId && c.state === 'delivered')) return [];
+    const cmd = commands.find((c) => c.target === agentId && c.state === 'queued');
+    if (!cmd) return [];
+    setState(cmd, 'delivered', agentId, { delivered_at: now() });
+    return [{ id: cmd.id, verb: cmd.verb, args: cmd.args, expires_at: cmd.expires_at }];
+  };
+  const readBody = (req, res, handle) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY) { send(res, 413, { error: 'too large' }); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (size > MAX_BODY) return;
+      let body;
+      try { body = JSON.parse(Buffer.concat(chunks).toString()); } catch { return send(res, 400, { error: 'json' }); }
+      handle(body);
+    });
+  };
+
   return createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://hub');
     if (req.method === 'GET' && url.pathname === '/v1/fleet') {
       try { auth(req, 'read'); } catch (e) { return send(res, 401, { error: e.message }); }
       return send(res, 200, { now: now(), machines: Object.values(reports) });
+    }
+    if (req.method === 'GET' && url.pathname === '/v1/commands') {
+      try { auth(req, 'read'); } catch (e) { return send(res, 401, { error: e.message }); }
+      expireCommands();
+      flushCommands();
+      return send(res, 200, { now: now(), commands: commands.slice(-100).reverse() });
+    }
+    if (req.method === 'POST' && url.pathname === '/v1/commands') {
+      let claims;
+      try { claims = auth(req, 'command'); } catch (e) { return send(res, 401, { error: e.message }); }
+      if (limited(claims.iss)) return send(res, 429, { error: 'rate' });
+      return readBody(req, res, (body) => {
+        const { target, verb, args } = isRecord(body) ? body : {};
+        const reason = typeof target !== 'string' || !TARGET_PATTERN.test(target) ? 'bad target'
+          : !reports[target] ? 'unknown machine'
+          : commandError(verb, args);
+        if (reason) return send(res, 400, { error: reason });
+        expireCommands();
+        if (commands.filter((c) => c.target === target && c.state === 'queued').length >= MAX_QUEUED_PER_MACHINE) {
+          flushCommands();
+          return send(res, 429, { error: 'queue full' });
+        }
+        const created = now();
+        const cmd = { id: randomUUID(), target, verb, args, created_at: created, expires_at: created + COMMAND_TTL_MS };
+        commands.push(cmd);
+        setState(cmd, 'queued', claims.iss);
+        flushCommands();
+        send(res, 200, { id: cmd.id, expires_at: cmd.expires_at });
+      });
     }
     if (req.method === 'POST' && url.pathname === '/v1/report') {
       let claims;
@@ -217,7 +318,11 @@ export function createHub({ keysPath, statePath, now = () => Date.now(), started
           verdicts: normalizeVerdicts(body.verdicts),
         };
         persist();
-        send(res, 200, { ok: true, judge: reposToJudge(reports, claims.iss, now()) });
+        applyResults(claims.iss, body.results);
+        expireCommands();
+        const due = deliverNext(claims.iss);
+        flushCommands();
+        send(res, 200, { ok: true, judge: reposToJudge(reports, claims.iss, now()), commands: due });
       });
       return;
     }

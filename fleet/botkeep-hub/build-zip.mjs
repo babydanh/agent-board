@@ -16,6 +16,6 @@ const tar = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\W
 
 mkdirSync(outDir, { recursive: true });
 rmSync(zipPath, { force: true });
-execFileSync(tar, ['-a', '-c', '-f', zipPath, '-C', fleet, 'hub.mjs', 'jwt.mjs', '-C', here, 'package.json', 'server.js']);
+execFileSync(tar, ['-a', '-c', '-f', zipPath, '-C', fleet, 'hub.mjs', 'jwt.mjs', 'commandSpec.mjs', '-C', here, 'package.json', 'server.js']);
 console.log(execFileSync(tar, ['-t', '-f', zipPath], { encoding: 'utf8' }).trim());
 console.log(`wrote ${zipPath}`);

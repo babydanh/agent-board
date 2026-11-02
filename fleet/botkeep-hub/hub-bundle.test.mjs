@@ -17,7 +17,7 @@ function buildZip() {
 
 test('TC-HUBBUNDLE-01: the zip holds only the runtime files, never keys or state', () => {
   const names = execFileSync(tar, ['-t', '-f', buildZip()], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean).sort();
-  assert.deepEqual(names, ['hub.mjs', 'jwt.mjs', 'package.json', 'server.js']);
+  assert.deepEqual(names, ['commandSpec.mjs', 'hub.mjs', 'jwt.mjs', 'package.json', 'server.js']);
 });
 
 test('TC-HUBBUNDLE-02: the extracted zip starts a hub that creates empty keys and refuses an unsigned read', async () => {
