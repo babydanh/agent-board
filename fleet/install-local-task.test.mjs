@@ -63,6 +63,17 @@ test('TC-LOCALTASK-05: remove never touches the key or the config that sit next 
   }
 });
 
+test('TC-LOCALTASK-07: the installer copies every module local-agent.mjs reaches, or the installed copy crashes on import', () => {
+  const seen = new Set();
+  const visit = (name) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    for (const match of readFileSync(join(HERE, name), 'utf8').matchAll(/from '\.\/([\w.-]+\.mjs)'/g)) visit(match[1]);
+  };
+  visit('local-agent.mjs');
+  assert.deepEqual([...seen].filter((name) => !AGENT_FILES.includes(name)), []);
+});
+
 test('TC-LOCALTASK-06: remove refuses a destination folder that is not the agent folder', () => {
   const root = mkdtempSync(join(tmpdir(), 'fleet-task-'));
   try {

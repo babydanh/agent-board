@@ -1,5 +1,5 @@
 // Installs the local fleet reporter so it runs after every Windows logon without a terminal.
-// It copies the four agent files into ~/.pixel-agents/fleet-agent/ (so the reporter does not depend on a worktree that
+// It copies the reporter's modules into ~/.pixel-agents/fleet-agent/ (so the reporter does not depend on a worktree that
 // may be removed) and puts a hidden launcher in the user's Startup folder. No admin rights, no scheduled task.
 //   node fleet/install-local-task.mjs            print the plan only
 //   node fleet/install-local-task.mjs --apply    copy, write the launcher and start the reporter now
@@ -10,7 +10,11 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const AGENT_FILES = ['agent.mjs', 'git-guard.mjs', 'jwt.mjs', 'local-agent.mjs'];
+// Every module local-agent.mjs reaches through relative imports (TC-LOCALTASK-07 keeps this list honest).
+export const AGENT_FILES = [
+  'agent.mjs', 'commands.mjs', 'commandSpec.mjs', 'git-guard.mjs', 'judge.mjs', 'judgeRun.mjs', 'jwt.mjs',
+  'laneScan.mjs', 'ledgerReport.mjs', 'local-agent.mjs', 'overlapFile.mjs', 'snapshot.mjs', 'snapshotFilter.mjs',
+];
 export const LAUNCHER_NAME = 'pixel-agents-fleet-local.vbs';
 const AGENT_DIR_NAME = 'fleet-agent';
 
