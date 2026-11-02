@@ -5,6 +5,8 @@
 // Config file (default ~/.pixel-agents/fleet-local.json):
 //   { "hub": "https://...", "keyPath": "<private key PEM>", "roots": ["V:/pixel-agents", ...], "id": "local-pc" }
 //   `roots` are main checkouts; every worktree of each root is reported.
+//   "source": "ledger" reports from the activity ledger instead (files agents wrote in the last 30 minutes; no git scan,
+//   no `roots` needed, optional "ledgerPath"). Far lighter, but file-level only.
 // Usage: node fleet/local-agent.mjs --gen-key   create the key pair, print the PUBLIC key to register on the hub (role report)
 //        node fleet/local-agent.mjs --once      send one report
 //        node fleet/local-agent.mjs --loop      send one report every 2 minutes until stopped
@@ -18,6 +20,7 @@ import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, re
 import { loadPendingResults, runDelivered } from './commands.mjs';
 import { signJwt } from './jwt.mjs';
 import { createLaneScanner } from './laneScan.mjs';
+import { buildLedgerReport, DEFAULT_LEDGER } from './ledgerReport.mjs';
 import { writeOverlapFiles } from './overlapFile.mjs';
 import { pruneSnapshots, snapshotLane } from './snapshot.mjs';
 
@@ -45,13 +48,16 @@ export function parseConfig(text) {
   let hub;
   try { hub = new URL(String(raw.hub)); } catch { throw new Error('config.hub must be a URL'); }
   if (hub.protocol !== 'https:') throw new Error('config.hub must be https');
-  if (!Array.isArray(raw.roots) || raw.roots.length === 0 || !raw.roots.every((root) => typeof root === 'string' && root !== '')) {
+  // "git" scans every worktree under `roots` (exact, heavy); "ledger" reads the activity ledger (files agents wrote, light).
+  const source = raw.source === undefined ? 'git' : raw.source;
+  if (source !== 'git' && source !== 'ledger') throw new Error('config.source must be "git" or "ledger"');
+  if (source === 'git' && (!Array.isArray(raw.roots) || raw.roots.length === 0 || !raw.roots.every((root) => typeof root === 'string' && root !== ''))) {
     throw new Error('config.roots must list at least one repository folder');
   }
   const id = raw.id === undefined ? localAgentId() : String(raw.id);
   if (!ID_PATTERN.test(id)) throw new Error('config.id must match [a-z0-9-], at most 40 characters');
   // Snapshots push code to GitHub (refs/wip) and commands let the board act on this machine: only a literal `true` turns either on.
-  return { hub: hub.origin, keyPath: typeof raw.keyPath === 'string' && raw.keyPath !== '' ? raw.keyPath : DEFAULT_KEY, roots: raw.roots, id, snapshots: raw.snapshots === true, commands: raw.commands === true };
+  return { hub: hub.origin, keyPath: typeof raw.keyPath === 'string' && raw.keyPath !== '' ? raw.keyPath : DEFAULT_KEY, source, roots: Array.isArray(raw.roots) ? raw.roots : [], ledgerPath: typeof raw.ledgerPath === 'string' && raw.ledgerPath !== '' ? raw.ledgerPath : DEFAULT_LEDGER, id, snapshots: raw.snapshots === true, commands: raw.commands === true };
 }
 
 /** The paths of the working trees of one repository (the root first); bare and prunable entries are skipped. */
@@ -146,7 +152,7 @@ async function main(args) {
   const once = async () => {
     try {
       // Results of the previous round ride this report; the reply confirms them and may carry the next command.
-      const report = { ...buildReport(config), results: loadPendingResults(RESULTS_FILE) };
+      const report = { ...(config.source === 'ledger' ? buildLedgerReport(config) : buildReport(config)), results: loadPendingResults(RESULTS_FILE) };
       const reply = await sendReport(config, report);
       // Files another machine edits too: the in-session [overlap] warning reads them from each repository's .git.
       if (Array.isArray(reply.overlaps)) writeOverlapFiles(report.repos, reply.overlaps);
