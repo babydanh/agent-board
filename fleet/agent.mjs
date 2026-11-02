@@ -140,10 +140,17 @@ function refreshRemotes(repoRoots) {
   writeFileSync(stamp, '');
 }
 
+// merge-tree is the slowest step of a report (seconds per checkout), and the local reporter repeats the scan every
+// minute while most checkouts do not move: the answer is reused until HEAD or the ref's commit changes.
+const contentInCache = new Map();
+
 /** True when merging HEAD into `ref` changes nothing (content check: also catches squash merges). */
-export function contentIn(path, ref) {
-  const target = git(path, 'rev-parse', `${ref}^{tree}`);
-  return Boolean(target) && git(path, 'merge-tree', '--write-tree', ref, 'HEAD').split('\n')[0] === target;
+export function contentIn(path, ref, run = git) {
+  const target = run(path, 'rev-parse', `${ref}^{tree}`);
+  if (!target) return false;
+  const key = `${path}\0${ref}\0${run(path, 'rev-parse', 'HEAD', `${ref}^{commit}`)}`;
+  if (!contentInCache.has(key)) contentInCache.set(key, run(path, 'merge-tree', '--write-tree', ref, 'HEAD').split('\n')[0] === target);
+  return contentInCache.get(key);
 }
 
 const LONG_LIVED_BRANCH = /^(main|master|develop|dev|stable|beta|release\/.+)$/;

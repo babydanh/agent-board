@@ -26,6 +26,7 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
 - [ ] 0.5 Update `agent.mjs` on `danh` and `danh1`, and on `danh3`–`danh6` when they are awake. Tiêu chí: `systemctl is-active fleet-agent.timer` is `active` on each, and the hub row for `flutter-3.47.9` has no changes.
   - Files: NGOÀI REPO (`/data/home` agent copy on each machine, via `install-agent.sh <id> <hub>` which keeps the key).
   - Giao/Nhận: none. Chủ file chung: none. Phụ thuộc: 0.1 merged; the user approves the deployment.
+  - Status 2026-11-02: `danh` and `danh1` verified (agent files match the repo, timer active, `flutter-3.47.9` ahead 0 and dirty 0 on the hub). Still open: `danh3` unreachable (`host_unavailable`), `danh4`–`danh6` suspended (not woken), `danh2` has no `~/.fleet` (no timer).
 
 ## 1. P1 — snapshots and the exact verdict
 
@@ -95,7 +96,8 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
 ## 4. P4 — keep it running
 
 - [ ] 4.1 Local reporter as a scheduled task. Tiêu chí: after a reboot `local-desktop-6g1153o` reports within 2 minutes without a terminal open; the task entry is removable with one command.
-  - Files: tạo `fleet/install-local-task.ps1`; NGOÀI REPO Windows Task Scheduler entry (created only after the user agrees). Giao/Nhận: none. Chủ file chung: none. Phụ thuộc: 0.4.
+  - Files: tạo `fleet/install-local-task.mjs` and `fleet/install-local-task.test.mjs` (TC-LOCALTASK-01..06); NGOÀI REPO a launcher in the user's Startup folder plus a copy of the agent in `~/.pixel-agents/fleet-agent/` (made only with `--apply`, undone with `--remove`). Changed from the plan: a Node script and a Startup launcher instead of a PowerShell script and Task Scheduler, so it needs no admin rights and can be tested. Also `fleet/agent.mjs` `contentIn` caches its answer per HEAD and ref commit, with `fleet/content-in.test.mjs` (TC-CONTENTIN-01..04): measured on 63 checkouts, one full report took 126–168 s the first time and 52 s the second, because `merge-tree` cost ~94 s of the first. Giao/Nhận: none. Chủ file chung: none. Phụ thuộc: 0.4.
+  - Open: `--apply` has not run (the permission classifier refused it as persistence; the user runs it). The first scan after a reboot still takes over 2 minutes on this machine, so "within 2 minutes" is not met on a cold start.
 - [ ] 4.2 Silence warning and wake re-point. Tiêu chí: `npm run test:server` exit 0 with TC-SILENCE-01 (hub unreachable → board says so, not "empty fleet"), TC-SILENCE-02 (a machine silent past the threshold shows "im lặng", not an error); `danh3`–`danh6` each point at the Botkeep hub after waking.
   - Files: sửa `server/src/fleet/handler.ts`, `webview-ui/src/company/fleet/FleetView.tsx`, tests; NGOÀI REPO per-machine re-point through `install-agent.sh`.
   - Giao: none. Nhận: none. Chủ file chung: `FleetView.tsx`. Phụ thuộc: 3.3.
