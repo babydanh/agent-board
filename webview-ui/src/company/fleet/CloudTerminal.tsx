@@ -12,7 +12,7 @@ import { serverToken } from '../../transport/serverToken.js';
 import { shouldOpenHistory } from './cloudHistoryTrigger.js';
 import { registerCloudInput } from './cloudInput.js';
 import { exitScreen } from './cloudTerminalExit.js';
-import { shouldReopenTerminal } from './cloudTerminalReopen.js';
+import { reopenOnce, shouldReopenAfterExit, shouldReopenTerminal } from './cloudTerminalReopen.js';
 import { keepWheelOutOfSession } from './cloudWheel.js';
 
 /** xterm's own default stack starts with Courier New, which is thin and uneven on Windows; these ship with the OS. */
@@ -52,8 +52,10 @@ export function CloudTerminal({
   const [status, setStatus] = useState('Đang nối tới máy (máy ngủ thì mất 1–2 phút)…');
   // True once the socket is closed or the ssh ended: the live view is dead until a new terminal is attached.
   const [ended, setEnded] = useState(false);
-  const reopen = useRef({ fn: onReopen, lastAt: null as number | null });
-  reopen.current.fn = onReopen;
+  // The socket handlers run once per socket and must call the current prop; when they may reopen is kept per terminal
+  // in cloudTerminalReopen, since every reopen mounts a new view.
+  const reopen = useRef(onReopen);
+  reopen.current = onReopen;
   // The terminal effect runs once per socket; the wheel handler inside it must see the current props and cooldown.
   const historyAsk = useRef({ onHistory, busy: historyBusy, lastOpenedAt: null as number | null });
   historyAsk.current.onHistory = onHistory;
@@ -110,8 +112,10 @@ export function CloudTerminal({
         const lines = Array.from({ length: buffer.length }, (_, row) => buffer.getLine(row)?.translateToString(true) ?? '');
         term.reset();
         term.write(exitScreen(lines, reason));
-        setStatus(reason);
         setEnded(true);
+        const now = Date.now();
+        const lost = (lastReopenAt: number | null): boolean => shouldReopenAfterExit({ exitCode: frame.exitCode, lastReopenAt, now });
+        setStatus(reopenOnce(terminalId, now, lost, reopen.current) ? `${reason} Đang tự nối lại…` : reason);
       }
     };
     socket.onclose = (event: CloseEvent) => {
@@ -119,11 +123,8 @@ export function CloudTerminal({
       setStatus(`Mất kết nối terminal (${event.code}${event.reason ? `: ${event.reason}` : ''}).`);
       setEnded(true);
       const now = Date.now();
-      const again = reopen.current;
-      if (again.fn && shouldReopenTerminal({ code: event.code, lastReopenAt: again.lastAt, now })) {
-        again.lastAt = now;
-        again.fn();
-      }
+      const gone = (lastReopenAt: number | null): boolean => shouldReopenTerminal({ code: event.code, lastReopenAt, now });
+      reopenOnce(terminalId, now, gone, reopen.current);
     };
     const input = term.onData((data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(encodeTerminalFrame({ type: 'input', data }));
