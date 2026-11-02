@@ -38,15 +38,16 @@ Worktree: `V:/pixel-agents.worktrees/cloud-in-tree` (branch `cloud-in-tree`). Ta
 - [ ] 1.1 Prove GitHub accepts the reserved ref namespace. Tiêu chí: push a one-commit ref `refs/wip/test/probe` to a throwaway repository, `git ls-remote` shows it, no workflow run starts, then delete it; result recorded in `design.md` decision 2 (keep refs, or fall back to `wip/**` branches).
   - Files: sửa `openspec/changes/fleet-sync-local-cloud/design.md` (record result only); throwaway repository chosen by the user.
   - Giao: decision "refs" or "branches". Nhận: none. Chủ file chung: none. Phụ thuộc: the user names the throwaway repository.
-- [ ] 1.2 Secret filter module. Tiêu chí: `node --test fleet/snapshotFilter.test.mjs` exit 0 with TC-SNAPFILTER-01..04 (env file, key file, over 50 MB, token in added line → each omitted and listed).
+- [x] 1.2 Secret filter module. Tiêu chí: `node --test fleet/snapshotFilter.test.mjs` exit 0 with TC-SNAPFILTER-01..04 (env file, key file, over 50 MB, token in added line → each omitted and listed).
   - Files: tạo `fleet/snapshotFilter.mjs`, `fleet/snapshotFilter.test.mjs`.
   - Giao: `filterSnapshotFiles(files: {path, size, addedText}[]): { keep: string[], omitted: { path, reason }[] }`. Nhận: patterns copied from `~/.omp/scripts/backup-push.py` (comment names the source).
   - Chủ file chung: owns `snapshotFilter.mjs`. Phụ thuộc: 0.1.
-- [ ] 1.3 Snapshot builder and pusher. Tiêu chí: `node --test fleet/snapshot.test.mjs` exit 0 with TC-SNAPSHOT-01 (real index, working tree and HEAD byte-identical before/after), TC-SNAPSHOT-02 (unchanged lane → no push), TC-SNAPSHOT-03 (refuses a ref named main/master/heads), TC-SNAPSHOT-04 (pushes at most once per minute per lane).
+- [x] 1.3 Snapshot builder and pusher (module and tests; the per-cycle call is wired in 1.5 behind an opt-in flag). Tiêu chí: `node --test fleet/snapshot.test.mjs` exit 0 with TC-SNAPSHOT-01 (real index, working tree and HEAD byte-identical before/after), TC-SNAPSHOT-02 (unchanged lane → no push), TC-SNAPSHOT-03 (refuses a ref named main/master/heads), TC-SNAPSHOT-04 (pushes at most once per minute per lane).
   - Files: tạo `fleet/snapshot.mjs`, `fleet/snapshot.test.mjs`; sửa `fleet/agent.mjs` and `fleet/local-agent.mjs` to call it each cycle.
   - Giao: `snapshotLane(lanePath, machineId, {push}): { ref, commit, omitted[] } | null`. Nhận: `filterSnapshotFiles` from 1.2, decision from 1.1.
   - Chủ file chung: `fleet/agent.mjs` is edited by this task only in P1.
   - Phụ thuộc: 1.1, 1.2.
+  - Status 2026-11-02: `fleet/snapshotFilter.mjs` (TC-SNAPFILTER-01..05) and `fleet/snapshot.mjs` (TC-SNAPSHOT-01..09, real repositories and a local bare remote) are done and green. Not yet proven against GitHub: 1.1. Nothing calls `snapshotLane` in a loop yet, so no code leaves a machine until 1.1 passes and the user turns the opt-in on. A token-shaped line in the lane's own commits blocks that lane's push (`ref: null`); a dirty secret file is only left out.
 - [ ] 1.4 Judge: pairwise `git merge-tree` over fetched snapshots. Tiêu chí: `node --test fleet/judge.test.mjs` exit 0 with TC-JUDGE-01 (same lines → conflict with file and range), TC-JUDGE-02 (same file, other region → auto-mergeable), TC-JUDGE-03 (budget hit → incomplete, never clean), TC-JUDGE-04 (lane mid-merge → incomplete).
   - Files: tạo `fleet/judge.mjs`, `fleet/judge.test.mjs` (uses a scratch repository fixture).
   - Giao: `judgeRepo(repoPath, snapshots[], {budgetMs}): Verdict[]` with `Verdict = { a, b, file, status: 'conflict'|'auto'|'clean'|'incomplete', ranges?: [number, number][] }`. Nhận: snapshot refs from 1.3.
