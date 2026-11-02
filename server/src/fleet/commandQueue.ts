@@ -75,10 +75,11 @@ export function createFleetCommandService(options: FleetCommandServiceOptions = 
   const fetcher = options.fetch ?? globalThis.fetch;
   const log = options.log ?? ((line: string) => console.log(`[Pixel Agents] ${line}`));
   const loadConfig = options.loadConfig ?? (() => readFleetConfig(options.configPath));
-  const commandKeyPath = options.commandKeyPath ?? path.join(homedir(), ...FLEET_COMMAND_KEY_PATH_SEGMENTS);
 
   /** Creates the key once, owner-only and never replaced; `created` tells the caller it cannot be registered yet. */
   async function ensureCommandKey(): Promise<{ readonly pem: string; readonly created: boolean }> {
+    // Resolved on use, not at import: the default service is built while the module loads.
+    const commandKeyPath = options.commandKeyPath ?? path.join(homedir(), ...FLEET_COMMAND_KEY_PATH_SEGMENTS);
     try {
       return { pem: await readFile(commandKeyPath, 'utf8'), created: false };
     } catch {
