@@ -4,6 +4,11 @@ import { TRANSPORT_DISCONNECTED_ERROR } from '../../../../core/src/messageDelive
 import type {
   ClientMessage,
   FleetBranchActionMessage,
+  FleetCleanupDoneMessage,
+  FleetCleanupPlanMessage,
+  FleetCleanupPlanRequestMessage,
+  FleetCleanupProgressMessage,
+  FleetCleanupStartMessage,
   FleetCloudCommentSendMessage,
   FleetCommandHistoryMessage,
   FleetCommandHistoryRequestMessage,
@@ -43,7 +48,10 @@ export type FleetServerMessage =
   | FleetLavishOpenedMessage
   | FleetDiffMessage
   | FleetHistoryMessage
-  | FleetCommandHistoryMessage;
+  | FleetCommandHistoryMessage
+  | FleetCleanupPlanMessage
+  | FleetCleanupProgressMessage
+  | FleetCleanupDoneMessage;
 
 /** A cloud tmux session the board is showing in its terminal panel. */
 export interface FleetTerminal {
@@ -62,6 +70,18 @@ export interface FleetAction {
   readonly startedAt: number;
 }
 export type FleetSend = (message: ClientMessage) => void;
+
+/** The cleanup dialog's data: the plan, and one run followed step by step until its done message. */
+export interface FleetCleanupState {
+  readonly planRequestId: string | null;
+  readonly plan: FleetCleanupPlanMessage | null;
+  readonly run: {
+    readonly requestId: string;
+    readonly events: readonly FleetCleanupProgressMessage[];
+    readonly done: FleetCleanupDoneMessage | null;
+  } | null;
+  readonly error: string | null;
+}
 
 export interface FleetState {
   readonly privileged: boolean | null;
@@ -83,6 +103,7 @@ export interface FleetState {
   readonly history: Omit<FleetHistoryMessage, 'type' | 'requestId'> | null;
   /** The hub's recent remote commands, once asked for; null until then. */
   readonly commands: readonly FleetCommandRow[] | null;
+  readonly cleanup: FleetCleanupState;
 }
 
 export interface FleetStoreOptions {
@@ -123,6 +144,9 @@ export interface FleetStore {
   /** Queues one fixed remote command through the board's command key; the history is asked again once the hub accepted it. */
   queueCommand: (command: Omit<FleetCommandQueueMessage, 'type' | 'requestId'>) => void;
   requestCommands: () => void;
+  requestCleanupPlan: () => void;
+  /** Starts the cleanup for the ticked items; the server plans again and refuses anything the new plan does not list. */
+  startCleanup: (staging: FleetCleanupStartMessage['staging'], junk: FleetCleanupStartMessage['junk']) => void;
   closeDiff: () => void;
 }
 
@@ -156,6 +180,7 @@ export function createInitialFleetState(): FleetState {
     diff: null,
     history: null,
     commands: null,
+    cleanup: { planRequestId: null, plan: null, run: null, error: null },
   };
 }
 
@@ -169,7 +194,10 @@ export function isFleetServerMessage(message: ServerMessage): message is FleetSe
     message.type === 'fleetLavishOpened' ||
     message.type === 'fleetDiff' ||
     message.type === 'fleetHistory' ||
-    message.type === 'fleetCommandHistory'
+    message.type === 'fleetCommandHistory' ||
+    message.type === 'fleetCleanupPlan' ||
+    message.type === 'fleetCleanupProgress' ||
+    message.type === 'fleetCleanupDone'
   );
 }
 
@@ -280,6 +308,46 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     return true;
   }
 
+  /** Cleanup answers are not single-slot actions (a run lasts minutes), so they follow their own request ids. */
+  function acceptCleanup(message: FleetServerMessage): boolean {
+    const cleanup = state.cleanup;
+    const run = cleanup.run;
+    if (message.type === 'fleetCleanupPlan') {
+      if (message.requestId !== cleanup.planRequestId) return true;
+      commit({ ...state, cleanup: { ...cleanup, planRequestId: null, plan: message, error: null } });
+      return true;
+    }
+    if (message.type === 'fleetCleanupProgress') {
+      if (run !== null && run.requestId === message.requestId) commit({ ...state, cleanup: { ...cleanup, run: { ...run, events: [...run.events, message] } } });
+      return true;
+    }
+    if (message.type === 'fleetCleanupDone') {
+      if (run !== null && run.requestId === message.requestId) commit({ ...state, cleanup: { ...cleanup, run: { ...run, done: message } } });
+      return true;
+    }
+    if (message.type === 'fleetCommandResult' && !message.ok) {
+      if (message.requestId === cleanup.planRequestId) {
+        commit({ ...state, cleanup: { ...cleanup, planRequestId: null, error: message.reason ?? SEND_FAILED_REASON } });
+        return true;
+      }
+      if (run !== null && run.done === null && message.requestId === run.requestId) {
+        commit({ ...state, cleanup: { ...cleanup, run: null, error: message.reason ?? SEND_FAILED_REASON } });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function sendCleanup(request: FleetCleanupPlanRequestMessage | FleetCleanupStartMessage, next: FleetCleanupState): void {
+    commit({ ...state, cleanup: next });
+    try {
+      send(request);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      commit({ ...state, cleanup: { ...next, planRequestId: null, run: null, error: detail === TRANSPORT_DISCONNECTED_ERROR ? NO_CONNECTION_REASON : SEND_FAILED_REASON } });
+    }
+  }
+
   return {
     subscribe: (listener) => {
       listeners.add(listener);
@@ -288,6 +356,7 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     getSnapshot: () => state,
     accept: (message) => {
       if (!isFleetServerMessage(message)) return;
+      if (acceptCleanup(message)) return;
       if (acceptAction(message)) return;
       const isSnapshotUpdate =
         message.type === 'fleetSnapshot' &&
@@ -408,6 +477,19 @@ export function createFleetStore(options: FleetStoreOptions & FleetStoreEnvironm
     },
     queueCommand: (command) => {
       act({ type: 'fleetCommandQueue', requestId: newRequestId(), ...command }, 'command', command.verb);
+    },
+    requestCleanupPlan: () => {
+      const requestId = newRequestId();
+      const run = state.cleanup.run;
+      // A finished run is replaced; one still going is left alone.
+      if (run !== null && run.done === null) return;
+      sendCleanup({ type: 'fleetCleanupPlanRequest', requestId }, { ...state.cleanup, planRequestId: requestId, run: null, error: null });
+    },
+    startCleanup: (staging, junk) => {
+      const run = state.cleanup.run;
+      if (run !== null && run.done === null) return;
+      const requestId = newRequestId();
+      sendCleanup({ type: 'fleetCleanupStart', requestId, staging, junk }, { ...state.cleanup, run: { requestId, events: [], done: null }, error: null });
     },
     requestCommands: () => {
       act({ type: 'fleetCommandHistoryRequest', requestId: newRequestId() }, 'commands', 'lịch sử lệnh');

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { FleetBranchActionMessage, FleetBranchAnalysis, FleetCommandRow, FleetLocalBranchSnapshot, FleetMachineSnapshot, FleetOverlapWarning, FleetPullRequest, FleetTaskCreateMessage } from '../../../../core/src/messages.js';
 import { BusyNote } from '../components/BusyNote.js';
+import { CleanupDialog } from './CleanupDialog.js';
 import { openPendingTab } from './cloudLavish.js';
 import { MAX_SESSIONS_PER_MACHINE, pickMachine, projectMachines, randomSuffix, slugFromPrompt } from './cloudTaskPick.js';
 import { CloudTerminal } from './CloudTerminal.js';
@@ -26,6 +27,7 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
   const localBranches = fleet.snapshot?.localBranches ?? [];
   const branchAnalyses = fleet.snapshot?.branchAnalyses ?? [];
   const [sleepersOpen, setSleepersOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const { awake, asleep } = splitMachines(fleet.snapshot?.machines ?? []);
 
   return (
@@ -35,13 +37,25 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
           <h1 className="text-base font-semibold text-text">Cloud</h1>
           <p className="text-xs text-text-muted">Máy InstaBox được báo cáo cho hub fleet.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => fleetStore.requestFleet()}
-          className="company-btn company-btn-md company-btn-ghost touch-target shrink-0"
-        >
-          Làm mới
-        </button>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!cleanupOpen) fleetStore.requestCleanupPlan();
+              setCleanupOpen(!cleanupOpen);
+            }}
+            className="company-btn company-btn-md company-btn-ghost touch-target"
+          >
+            Dọn & lên staging
+          </button>
+          <button
+            type="button"
+            onClick={() => fleetStore.requestFleet()}
+            className="company-btn company-btn-md company-btn-ghost touch-target"
+          >
+            Làm mới
+          </button>
+        </div>
       </header>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {fleet.terminal !== null && (
@@ -51,6 +65,15 @@ export function FleetView({ request = null }: { request?: CloudRequest | null })
             label={`${fleet.terminal.machine} · ${fleet.terminal.session}`}
             onClose={() => fleetStore.closeTerminal()}
             onReopen={fleetStore.reopenTerminal}
+          />
+        )}
+        {cleanupOpen && (
+          <CleanupDialog
+            cleanup={fleet.cleanup}
+            overlaps={fleet.snapshot?.overlaps ?? []}
+            onRefresh={() => fleetStore.requestCleanupPlan()}
+            onStart={(staging, junk) => fleetStore.startCleanup(staging, junk)}
+            onClose={() => setCleanupOpen(false)}
           />
         )}
         <ActionStatus fleet={fleet} />
