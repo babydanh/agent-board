@@ -7,7 +7,7 @@ import type {
   LedgerView,
 } from '../../../core/src/messages.js';
 import { FLEET_HUB_TASK_LIMIT, FLEET_LAVISH_KEY, FLEET_SESSION_NAME, FLEET_STALE_AFTER_MS, FLEET_TASK_SLUG } from './constants.js';
-import type { FleetHubMachine, FleetHubRepo, FleetHubResponse } from './hubClient.js';
+import type { FleetHubMachine, FleetHubRepo, FleetHubResponse, FleetHubVerdict } from './hubClient.js';
 
 export type FleetMachineState = FleetMachineSnapshot['state'];
 
@@ -53,6 +53,8 @@ function formatRanges(ranges: Ranges): string {
 interface OverlapEntry {
   /** Display name: the folder name on the first machine that touched the file. */
   readonly repo: string;
+  /** Lower-cased repository identity (see `repoIdentity`), to match the judge's verdicts. */
+  readonly identity: string;
   readonly path: string;
   readonly touches: Map<string, Touch>;
   /** Lower-cased folder names seen for this repository; the local ledger only knows these. */
@@ -62,9 +64,13 @@ interface OverlapEntry {
   local: boolean;
 }
 
+/** `danh/feature` -> `danh`: the machine a snapshot lane belongs to. */
+const laneMachine = (lane: string): string => lane.split('/')[0] ?? lane;
+
 export function computeFleetOverlaps(
   machines: readonly FleetHubMachine[],
   localRepos: readonly FleetLocalRepo[],
+  nowMs: number = Date.now(),
 ): FleetOverlapWarning[] {
   const entries = new Map<string, OverlapEntry>();
   const touch = (repo: FleetHubRepo, repoName: string, file: string, machine: string, ranges: Ranges | null) => {
@@ -73,7 +79,7 @@ export function computeFleetOverlaps(
     const key = overlapKey(repoIdentity(repo), path);
     let entry = entries.get(key);
     if (entry === undefined) {
-      entry = { repo: repoName, path, touches: new Map(), aliases: new Set(), bases: new Map(), local: false };
+      entry = { repo: repoName, identity: repoIdentity(repo), path, touches: new Map(), aliases: new Set(), bases: new Map(), local: false };
       entries.set(key, entry);
     }
     entry.aliases.add(repoName.toLowerCase());
@@ -100,6 +106,24 @@ export function computeFleetOverlaps(
     }
   }
 
+  // The judge's exact verdicts (only from machines still reporting). A conflict seen only in the snapshots gets its own entry.
+  const exact = new Map<string, FleetHubVerdict[]>();
+  const unchecked: { identity: string; machines: readonly string[] }[] = [];
+  for (const machine of machines) {
+    if (classifyFleetMachineState(machine.received_at, nowMs) !== 'online') continue;
+    for (const verdict of machine.verdicts ?? []) {
+      const identity = verdict.repo.toLowerCase();
+      if (verdict.file === '') { unchecked.push({ identity, machines: [laneMachine(verdict.a), laneMachine(verdict.b)] }); continue; }
+      const path = normalizeRelativePath(verdict.file);
+      if (path === '') continue;
+      const key = overlapKey(identity, path);
+      exact.set(key, [...(exact.get(key) ?? []), verdict]);
+      if (verdict.status === 'conflict' && !entries.has(key)) {
+        entries.set(key, { repo: repositoryName(identity), identity, path, touches: new Map(), aliases: new Set(), bases: new Map(), local: false });
+      }
+    }
+  }
+
   // The local ledger has no GitHub identity, so it is matched by folder name against each entry's aliases.
   for (const repo of localRepos) {
     const alias = repositoryName(repo.repo).toLowerCase();
@@ -113,7 +137,7 @@ export function computeFleetOverlaps(
   }
 
   const warnings: FleetOverlapWarning[] = [];
-  for (const entry of entries.values()) {
+  for (const [key, entry] of entries) {
     const touches = [...entry.touches.values()];
     const clashing = new Set<string>();
     let lineLevel = true;
@@ -127,22 +151,33 @@ export function computeFleetOverlaps(
     }
     // The local machine only reports file names, so a local clash is file-level.
     const withLocal = entry.local && touches.length > 0;
-    if (clashing.size === 0 && !withLocal) continue;
+    const pairs = exact.get(key) ?? [];
+    const conflicts = pairs.filter((pair) => pair.status === 'conflict');
+    if (clashing.size === 0 && !withLocal && conflicts.length === 0) continue;
     const involved = clashing.size > 0 ? touches.filter((t) => clashing.has(t.machine)) : touches;
     // Line numbers only mean the same thing against the same base, so a base difference forces file level.
     const bases = new Set(involved.flatMap((t) => [...(entry.bases.get(t.machine) ?? [])]));
     const baseDiffers = bases.size > 1;
+    const machinesOf = [...new Set([...involved.map((t) => t.machine), ...conflicts.flatMap((pair) => [laneMachine(pair.a), laneMachine(pair.b)])])].sort();
+    const verdict: FleetOverlapWarning['verdict'] = conflicts.length > 0 ? 'conflict'
+      : pairs.length > 0 ? 'auto'
+      : unchecked.some((item) => item.identity === entry.identity && item.machines.every((name) => machinesOf.includes(name))) ? 'incomplete'
+      : undefined;
+    const gitDetail = conflicts.map((pair) => `git: ${laneMachine(pair.a)} ↔ ${laneMachine(pair.b)} xung đột${pair.ranges?.length ? ` dòng ${formatRanges(pair.ranges)}` : ''}`);
+    const detail = [
+      ...involved.filter((t) => t.ranges !== null).map((t) => `${t.machine}: dòng ${formatRanges(t.ranges as Ranges)}`),
+      ...gitDetail,
+      ...(verdict === 'auto' ? ['git: tự gộp được'] : []),
+    ].join(' · ');
     warnings.push({
       repo: entry.repo,
       path: entry.path,
-      machines: involved.map((t) => t.machine).sort(),
+      machines: machinesOf,
       local: entry.local,
-      level: clashing.size > 0 && lineLevel && !baseDiffers ? 'line' : 'file',
+      level: (clashing.size > 0 && lineLevel && !baseDiffers) || conflicts.some((pair) => pair.ranges?.length) ? 'line' : 'file',
       ...(baseDiffers ? { baseDiffers: true } : {}),
-      detail: involved
-        .filter((t) => t.ranges !== null)
-        .map((t) => `${t.machine}: dòng ${formatRanges(t.ranges as Ranges)}`)
-        .join(' · '),
+      ...(verdict ? { verdict } : {}),
+      detail,
     });
   }
   return warnings.sort((a, b) => a.repo.localeCompare(b.repo) || a.path.localeCompare(b.path));
@@ -255,7 +290,7 @@ export function buildFleetSnapshot(
         ...(activeTaskSlugs.length ? { activeTaskSlugs } : {}),
       };
     }),
-    overlaps: computeFleetOverlaps([...response.machines, ...reporters], localRepos),
+    overlaps: computeFleetOverlaps([...response.machines, ...reporters], localRepos, response.now),
     ...(localGuard ? { localGuard } : {}),
     ...(localActiveBranches.length ? { localActiveBranches } : {}),
     ...(localActivePaths.length ? { localActivePaths } : {}),

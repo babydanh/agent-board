@@ -7230,6 +7230,12 @@ components:
           type: string
         baseDiffers:
           type: boolean
+        verdict:
+          type: string
+          enum: [conflict, auto, incomplete]
+          description: >-
+            Exact result of git merging the lanes' snapshots (the fleet judge): conflict, auto (git merges it by
+            itself) or incomplete (not fully checked, never clean). Absent when no judge has answered.
 
     FleetCommandResultMessage:
       type: object

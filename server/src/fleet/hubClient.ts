@@ -48,6 +48,18 @@ export interface FleetHubTask {
   readonly branch: string;
 }
 
+/** One exact pair result from the judge machine (fleet/judge.mjs). `file` is empty when the pair could not be checked. */
+export interface FleetHubVerdict {
+  /** HOST/OWNER/REPO of the repository the two lanes belong to. */
+  readonly repo: string;
+  /** Lane names `<machine>/<branch>`. */
+  readonly a: string;
+  readonly b: string;
+  readonly file: string;
+  readonly status: 'conflict' | 'auto' | 'incomplete';
+  readonly ranges?: readonly (readonly [number, number])[];
+}
+
 export interface FleetHubMachine {
   readonly agent_id: string;
   readonly received_at: number;
@@ -59,6 +71,7 @@ export interface FleetHubMachine {
   readonly lavish?: readonly { readonly key: string; readonly file: string }[];
   readonly viec?: readonly FleetHubTask[];
   readonly guard?: GitGuardReport | null;
+  readonly verdicts?: readonly FleetHubVerdict[];
 }
 
 export interface FleetHubResponse {
