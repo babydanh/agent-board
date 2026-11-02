@@ -111,6 +111,7 @@ function normalizeGuard(value) {
 const VERDICT_STATUSES = new Set(['conflict', 'auto', 'incomplete']);
 const MAX_VERDICTS = 200;
 const MAX_RANGES = 20;
+const MAX_OVERLAPS = 200;
 const ONLINE_WITHIN_MS = 10 * 60 * 1000;
 const LOCAL_REPORTER_PREFIX = 'local-';
 
@@ -164,6 +165,43 @@ function reposToJudge(reports, agentId, nowMs) {
     .map(([repo]) => repo)
     .sort()
     .slice(0, 20);
+}
+
+/**
+ * Files `agentId` is editing that another machine, still reporting, edits in the same repository. Only names and files:
+ * the machine learns who to ask, never what the other side changed. Files come from uncommitted edits and committed
+ * changes alike, matched by `github_repo` so a worktree and its main checkout count as one repository.
+ */
+function overlapsFor(reports, agentId, nowMs) {
+  const filesOf = (report) => {
+    const byRepo = new Map();
+    for (const row of report.repos ?? []) {
+      if (typeof row?.github_repo !== 'string' || row.github_repo === '') continue;
+      const files = byRepo.get(row.github_repo) ?? new Set();
+      for (const file of row.dirty_files ?? []) if (typeof file === 'string' && file !== '') files.add(file);
+      for (const change of row.changes ?? []) if (typeof change?.path === 'string' && change.path !== '') files.add(change.path);
+      byRepo.set(row.github_repo, files);
+    }
+    return byRepo;
+  };
+  const mine = reports[agentId] ? filesOf(reports[agentId]) : new Map();
+  const shared = new Map();
+  for (const other of Object.values(reports)) {
+    if (other.agent_id === agentId || nowMs - other.received_at > ONLINE_WITHIN_MS) continue;
+    for (const [repo, files] of filesOf(other)) {
+      for (const file of files) {
+        if (!mine.get(repo)?.has(file)) continue;
+        const key = JSON.stringify([repo, file]);
+        const entry = shared.get(key) ?? { repo, file, machines: [] };
+        entry.machines.push(other.agent_id);
+        shared.set(key, entry);
+      }
+    }
+  }
+  return [...shared.values()]
+    .map((entry) => ({ ...entry, machines: entry.machines.sort() }))
+    .sort((a, b) => (a.repo + a.file).localeCompare(b.repo + b.file))
+    .slice(0, MAX_OVERLAPS);
 }
 
 export function createHub({ keysPath, statePath, now = () => Date.now(), startedAt = now() }) {
@@ -322,7 +360,7 @@ export function createHub({ keysPath, statePath, now = () => Date.now(), started
         expireCommands();
         const due = deliverNext(claims.iss);
         flushCommands();
-        send(res, 200, { ok: true, judge: reposToJudge(reports, claims.iss, now()), commands: due });
+        send(res, 200, { ok: true, judge: reposToJudge(reports, claims.iss, now()), overlaps: overlapsFor(reports, claims.iss, now()), commands: due });
       });
       return;
     }

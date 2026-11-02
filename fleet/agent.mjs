@@ -19,6 +19,7 @@ import { loadPendingResults, runDelivered } from './commands.mjs';
 import { backup, prune, scan } from './git-guard.mjs';
 import { collectVerdicts, loadJudgeList, saveJudgeList } from './judgeRun.mjs';
 import { signJwt } from './jwt.mjs';
+import { writeOverlapFiles } from './overlapFile.mjs';
 import { pruneSnapshots, snapshotLane } from './snapshot.mjs';
 
 const ROOT = process.env.FLEET_ROOT ?? '/data/home';
@@ -453,6 +454,8 @@ if (process.env.FLEET_ID) {
   // The hub's answer names the repositories this machine must judge (the next run uses it) and may carry a command.
   if (res.status === 200) {
     const reply = await res.json().catch(() => ({}));
+    // Files another machine edits too: the in-session [overlap] warning reads them from each repository's .git.
+    if (Array.isArray(reply.overlaps)) writeOverlapFiles(repoRows, reply.overlaps);
     if (snapshotsOn) {
       try { saveJudgeList(judgeFile, reply.judge); } catch { /* keep the previous assignment */ }
     }

@@ -4,7 +4,10 @@
 set -euo pipefail
 ID="$1"; HUB="$2"
 DIR="$HOME/.fleet"; mkdir -p "$DIR"; chmod 700 "$DIR"
-cp "$(dirname "$0")"/jwt.mjs "$(dirname "$0")"/agent.mjs "$(dirname "$0")"/git-guard.mjs "$DIR/"
+# Every module agent.mjs imports must be here (fleet/install-modules.test.mjs checks the list).
+for f in jwt agent git-guard commands commandSpec judgeRun judge snapshot snapshotFilter overlapFile; do
+  cp "$(dirname "$0")/$f.mjs" "$DIR/"
+done
 if [ ! -f "$DIR/key.pem" ]; then
   node -e "const c=require('crypto');const k=c.generateKeyPairSync('ed25519');require('fs').writeFileSync('$DIR/key.pem',k.privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});require('fs').writeFileSync('$DIR/pub.pem',k.publicKey.export({type:'spki',format:'pem'}))"
 fi

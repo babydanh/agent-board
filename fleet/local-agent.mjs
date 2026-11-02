@@ -18,6 +18,7 @@ import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, re
 import { loadPendingResults, runDelivered } from './commands.mjs';
 import { signJwt } from './jwt.mjs';
 import { createLaneScanner } from './laneScan.mjs';
+import { writeOverlapFiles } from './overlapFile.mjs';
 import { pruneSnapshots, snapshotLane } from './snapshot.mjs';
 
 // The hub calls a machine stale after 10 minutes of silence; 2 minutes keeps overlap warnings fresh at a fraction of
@@ -147,6 +148,8 @@ async function main(args) {
       // Results of the previous round ride this report; the reply confirms them and may carry the next command.
       const report = { ...buildReport(config), results: loadPendingResults(RESULTS_FILE) };
       const reply = await sendReport(config, report);
+      // Files another machine edits too: the in-session [overlap] warning reads them from each repository's .git.
+      if (Array.isArray(reply.overlaps)) writeOverlapFiles(report.repos, reply.overlaps);
       await runDelivered(reply.commands, {
         enabled: config.commands,
         file: RESULTS_FILE,
