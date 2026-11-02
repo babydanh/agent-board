@@ -27,10 +27,11 @@ const GUARD_PRUNE_STAMP = join(homedir(), '.cache', 'git-guard', 'last-prune');
 const ENGINES = { claude: /(^|\/)claude$/, codex: /(^|\/)codex$/, omp: /(^|\/)omp$/ };
 
 // stderr is ignored: a missing upstream or ref is an expected answer here, and `--loop` would flood the log with it.
-const GIT_STDIO = ['ignore', 'pipe', 'ignore'];
+// windowsHide: without it every git call from a windowless node process opens a console window on Windows.
+export const GIT_OPTIONS = { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true };
 
 export const git = (cwd, ...args) => {
-  try { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 5000, stdio: GIT_STDIO }).trim(); } catch { return ''; }
+  try { return execFileSync('git', ['-C', cwd, ...args], GIT_OPTIONS).trim(); } catch { return ''; }
 };
 
 /**
@@ -39,7 +40,7 @@ export const git = (cwd, ...args) => {
  */
 export function dirtyPaths(cwd) {
   let out = '';
-  try { out = execFileSync('git', ['-C', cwd, 'status', '--porcelain'], { encoding: 'utf8', timeout: 5000, stdio: GIT_STDIO }); } catch { /* not a repository */ }
+  try { out = execFileSync('git', ['-C', cwd, 'status', '--porcelain'], GIT_OPTIONS); } catch { /* not a repository */ }
   return out.split('\n').filter(Boolean).map((line) => line.slice(3)).slice(0, 200);
 }
 
