@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { changedRanges, contentIn, defaultBranch, dirtyPaths, fitReport, git, repoFromOrigin } from './agent.mjs';
 import { signJwt } from './jwt.mjs';
 import { createLaneScanner } from './laneScan.mjs';
+import { snapshotLane } from './snapshot.mjs';
 
 // The hub calls a machine stale after 10 minutes of silence; 2 minutes keeps overlap warnings fresh at a fraction of
 // the old 60 s scan cost, because unchanged checkouts now cost one `git status` each (see laneScan.mjs).
@@ -46,7 +47,8 @@ export function parseConfig(text) {
   }
   const id = raw.id === undefined ? localAgentId() : String(raw.id);
   if (!ID_PATTERN.test(id)) throw new Error('config.id must match [a-z0-9-], at most 40 characters');
-  return { hub: hub.origin, keyPath: typeof raw.keyPath === 'string' && raw.keyPath !== '' ? raw.keyPath : DEFAULT_KEY, roots: raw.roots, id };
+  // Snapshots push code to GitHub (refs/wip): only a literal `true` turns them on.
+  return { hub: hub.origin, keyPath: typeof raw.keyPath === 'string' && raw.keyPath !== '' ? raw.keyPath : DEFAULT_KEY, roots: raw.roots, id, snapshots: raw.snapshots === true };
 }
 
 /** The paths of the working trees of one repository (the root first); bare and prunable entries are skipped. */
@@ -139,8 +141,14 @@ async function main(args) {
   const config = parseConfig(readFileSync(configPath, 'utf8'));
   const once = async () => {
     try {
-      await sendReport(config, buildReport(config));
+      const report = buildReport(config);
+      await sendReport(config, report);
       console.log(`local-agent: reported as ${config.id}`);
+      if (config.snapshots) {
+        for (const row of report.repos) {
+          try { snapshotLane(row.path, config.id); } catch (error) { console.error(`local-agent: snapshot ${row.path}: ${error.message}`); }
+        }
+      }
     } catch (error) {
       console.error(`local-agent: ${error.message}`);
       process.exitCode = 1;

@@ -104,6 +104,55 @@ function normalizeGuard(value) {
   return guard;
 }
 
+const VERDICT_STATUSES = new Set(['conflict', 'auto', 'incomplete']);
+const MAX_VERDICTS = 200;
+const MAX_RANGES = 20;
+const ONLINE_WITHIN_MS = 10 * 60 * 1000;
+const LOCAL_REPORTER_PREFIX = 'local-';
+
+const isLine = (n) => Number.isInteger(n) && n >= 1;
+
+/** Verdicts a judge machine posts (fleet/judge.mjs). Bad entries are dropped one by one, never the whole report. */
+function normalizeVerdicts(value) {
+  if (!Array.isArray(value)) return [];
+  const verdicts = [];
+  for (const item of value) {
+    if (verdicts.length >= MAX_VERDICTS) break;
+    if (!isRecord(item) || !VERDICT_STATUSES.has(item.status) || typeof item.file !== 'string') continue;
+    if (![item.repo, item.a, item.b].every((text) => typeof text === 'string' && text !== '')) continue;
+    const ranges = item.ranges;
+    if (ranges !== undefined && !(Array.isArray(ranges) && ranges.every((pair) => Array.isArray(pair) && pair.length === 2 && isLine(pair[0]) && isLine(pair[1])))) continue;
+    verdicts.push({
+      repo: item.repo.slice(0, 200), a: item.a.slice(0, 200), b: item.b.slice(0, 200), file: item.file.slice(0, 500), status: item.status,
+      ...(ranges === undefined ? {} : { ranges: ranges.slice(0, MAX_RANGES) }),
+    });
+  }
+  return verdicts;
+}
+
+/**
+ * Repositories `agentId` must judge: reported by at least two machines, and this machine is the lowest-id online cloud
+ * machine that holds them. Local reporters (`local-…`) never judge. With no cloud machine online nobody is chosen.
+ */
+function reposToJudge(reports, agentId, nowMs) {
+  if (agentId.startsWith(LOCAL_REPORTER_PREFIX)) return [];
+  const holders = new Map();
+  for (const report of Object.values(reports)) {
+    for (const row of report.repos ?? []) {
+      if (typeof row?.github_repo !== 'string' || row.github_repo === '') continue;
+      const entry = holders.get(row.github_repo) ?? { machines: new Set(), online: new Set() };
+      entry.machines.add(report.agent_id);
+      if (nowMs - report.received_at <= ONLINE_WITHIN_MS && !report.agent_id.startsWith(LOCAL_REPORTER_PREFIX)) entry.online.add(report.agent_id);
+      holders.set(row.github_repo, entry);
+    }
+  }
+  return [...holders]
+    .filter(([, entry]) => entry.machines.size >= 2 && [...entry.online].sort()[0] === agentId)
+    .map(([repo]) => repo)
+    .sort()
+    .slice(0, 20);
+}
+
 export function createHub({ keysPath, statePath, now = () => Date.now(), startedAt = now() }) {
   const seenJti = new Map();
   const hits = new Map();
@@ -165,9 +214,10 @@ export function createHub({ keysPath, statePath, now = () => Date.now(), started
           viec: Array.isArray(body.viec) ? body.viec.slice(0, 30) : [],
           repos: Array.isArray(body.repos) ? body.repos.slice(0, 20) : [],
           guard: normalizeGuard(body.guard),
+          verdicts: normalizeVerdicts(body.verdicts),
         };
         persist();
-        send(res, 200, { ok: true });
+        send(res, 200, { ok: true, judge: reposToJudge(reports, claims.iss, now()) });
       });
       return;
     }

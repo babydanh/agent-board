@@ -17,6 +17,8 @@ import { basename, dirname, join } from 'node:path';
 
 import { backup, prune, scan } from './git-guard.mjs';
 import { signJwt } from './jwt.mjs';
+import { collectVerdicts, loadJudgeList, saveJudgeList } from './judgeRun.mjs';
+import { snapshotLane } from './snapshot.mjs';
 
 const ROOT = process.env.FLEET_ROOT ?? '/data/home';
 
@@ -295,6 +297,8 @@ export function fitReport(report, limit = 60_000) {
     if (size() <= limit) break;
     if (repo.dirty_files.length > 20) { repo.dirty_files = repo.dirty_files.slice(0, 20); repo.dirty_truncated = true; }
   }
+  // Verdicts give way before repository rows do: the hub keeps at most 200 and rows are what the board lists.
+  while (size() > limit && report.verdicts?.length > 0) report.verdicts.pop();
   // Last resort: keep only branch-level data, then drop repos from the end.
   for (const repo of report.repos) {
     if (size() <= limit) break;
@@ -407,6 +411,16 @@ if (process.env.FLEET_ID) {
   const taskBook = readTaskBook(join(process.env.HOME ?? ROOT, '.cloud-viec'));
   const repoRows = repos();
   const guardReport = await scan({ roots: [ROOT], machine: id });
+  // Off by default: snapshots push code to GitHub (refs/wip) and judging fetches it, so a machine opts in with FLEET_SNAPSHOT=1.
+  const snapshotsOn = process.env.FLEET_SNAPSHOT === '1';
+  const judgeFile = join(process.env.HOME ?? ROOT, '.fleet', 'judge.json');
+  let verdicts = [];
+  if (snapshotsOn) {
+    for (const row of repoRows) {
+      try { snapshotLane(row.path, id); } catch (error) { console.error(`fleet-agent: snapshot ${row.path}: ${error.message}`); }
+    }
+    verdicts = collectVerdicts(loadJudgeList(judgeFile), repoRows, { budgetMs: 20_000 });
+  }
   const token = signJwt(
     { iss: id, aud: 'fleet-hub', role: 'report' },
     readFileSync(process.env.FLEET_KEY, 'utf8'),
@@ -425,10 +439,15 @@ if (process.env.FLEET_ID) {
         viec: taskBook,
         repos: repoRows,
         guard: summarizeGuard(guardReport),
+        verdicts,
       }),
     ),
     signal: AbortSignal.timeout(15000),
   }).catch((e) => ({ status: 0, text: async () => e.message }));
+  // The hub's answer names the repositories this machine must judge; the next run uses it.
+  if (snapshotsOn && res.status === 200) {
+    try { saveJudgeList(judgeFile, (await res.json()).judge); } catch { /* keep the previous assignment */ }
+  }
   if (process.env.GIT_GUARD_BACKUP !== '0' && shouldBackupGuard(lastBackupTime())) {
     try { backup(guardReport); }
     catch (error) { console.error(`fleet-agent: git guard backup failed: ${error.message}`); }
